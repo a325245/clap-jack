@@ -32,6 +32,7 @@ public class Player
     public int GamesWon { get; set; } = 0;
     public int TotalWinnings { get; set; } = 0;
     public int TurnStartBank { get; set; } = 0; // Bank at start of current turn
+    public int PreDealBank { get; set; } = 0; // Bank before any bets deducted
 
     public Player(string name, string server = "")
     {

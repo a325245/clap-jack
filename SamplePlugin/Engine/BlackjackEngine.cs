@@ -75,7 +75,7 @@ public class BlackjackEngine
             return;
         }
 
-        // Reset all player states
+        // Reset all player states and capture pre-deal banks
         foreach (var player in CurrentTable.Players.Values)
         {
             player.Hands.Clear();
@@ -85,6 +85,7 @@ public class BlackjackEngine
             player.HasInsurance = false;
             player.InsuranceBet = 0;
             player.ActiveHandIndex = 0;
+            player.PreDealBank = player.Bank; // Capture bank before any bets are deducted
         }
 
         // Build turn order and set up hands
@@ -157,7 +158,7 @@ public class BlackjackEngine
 
         // Announce player's cards at the start of their turn
         var handInfo = player.GetHandInfo(0);
-        string handDisplay = string.Join(" ", handInfo.Cards.Select(c => FormatCard(c)));
+        string handDisplay = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
         SendDealerMessage($"{playerName}: {handDisplay} ({handInfo.GetHandDescription()})");
 
         // Auto-complete if blackjack
@@ -286,7 +287,9 @@ public class BlackjackEngine
         player.Hands[player.ActiveHandIndex].Add(newCard);
 
         var handInfo = player.GetHandInfo();
-        SendChatMessage($"{playerName} hits: {FormatCard(newCard)} -> {handInfo.GetHandDescription()}");
+        // Show all cards in hand, not just the new one
+        string allCards = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
+        SendChatMessage($"{playerName} hits: {allCards} -> {handInfo.GetHandDescription()}");
         LogAction($"{playerName} hits: {newCard.GetCardDisplay()} -> total {handInfo.Score}");
 
         if (handInfo.IsBust)
@@ -334,7 +337,9 @@ public class BlackjackEngine
         player.Hands[player.ActiveHandIndex].Add(newCard);
 
         var handInfo = player.GetHandInfo();
-        SendChatMessage($"{playerName} doubles down: {FormatCard(newCard)} -> {handInfo.GetHandDescription()}");
+        // Show all cards in hand for double down too
+        string allCards = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
+        SendChatMessage($"{playerName} doubles down: {allCards} -> {handInfo.GetHandDescription()}");
         LogAction($"{playerName} doubled down: {newCard.GetCardDisplay()} -> total {handInfo.Score}");
 
         if (handInfo.IsBust)
@@ -379,7 +384,7 @@ public class BlackjackEngine
 
         // Show the new first hand
         var handInfo = player.GetHandInfo(0);
-        string handDisplay = string.Join(" ", handInfo.Cards.Select(c => FormatCard(c)));
+        string handDisplay = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
         SendDealerMessage($" {playerName}, hand 1: {handDisplay} ({handInfo.GetHandDescription()})");
 
         LogAction($"{playerName} split into {player.Hands.Count} hands");
@@ -421,7 +426,7 @@ public class BlackjackEngine
 
             // Announce the next hand with cards
             var handInfo = player.GetHandInfo();
-            string handDisplay = string.Join(" ", handInfo.Cards.Select(c => FormatCard(c)));
+            string handDisplay = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
             SendDealerMessage($"{playerName}, hand {player.ActiveHandIndex + 1} of {player.Hands.Count}: {handDisplay} ({handInfo.GetHandDescription()})");
 
             // Build available commands for this hand
@@ -473,7 +478,9 @@ public class BlackjackEngine
     {
         CurrentTable.HoleCardRevealed = true;
 
-        SendDealerMessage($"Dealer has: {CurrentTable.GetDealerHandDisplay()} ({CurrentTable.GetDealerScore()})");
+        // Show dealer cards with proper formatting
+        string dealerCards = string.Join("", CurrentTable.DealerHand.Select(c => FormatCard(c)));
+        SendDealerMessage($"Dealer has: {dealerCards} ({CurrentTable.GetDealerScore()})");
         LogAction($"Dealer reveals: {CurrentTable.GetDealerHandDisplay()} = {CurrentTable.GetDealerScore()}");
 
         // Handle insurance payouts
@@ -543,8 +550,8 @@ public class BlackjackEngine
                 continue;
             }
 
-            // Use turn start bank for first hand, then track sequentially
-            int displayStartBank = player.TurnStartBank;
+            // Track bank progression properly for display
+            int currentDisplayBank = player.PreDealBank; // Start with pre-deal bank
 
             for (int handIndex = 0; handIndex < player.Hands.Count; handIndex++)
             {
@@ -554,13 +561,12 @@ public class BlackjackEngine
                 int winAmount = 0;
                 int totalPayout = 0;
 
-                // Capture bank before this hand's payout
-                int bankBeforeThisHand = player.Bank;
+                // Bank before this specific hand's payout (after bet was already deducted)
+                int bankBeforeThisHandPayout = player.Bank;
 
                 if (handInfo.IsBust)
                 {
                     result = "BUST";
-                    // Player loses bet (already deducted when game started)
                     winAmount = 0;
                     totalPayout = 0;
                 }
@@ -581,7 +587,6 @@ public class BlackjackEngine
                 else if (CurrentTable.DealerHasBlackjack)
                 {
                     result = "LOSE";
-                    // Player loses bet (already deducted)
                     winAmount = 0;
                     totalPayout = 0;
                 }
@@ -609,7 +614,6 @@ public class BlackjackEngine
                 else
                 {
                     result = "LOSE";
-                    // Player loses bet (already deducted)
                     winAmount = 0;
                     totalPayout = 0;
                 }
@@ -627,16 +631,26 @@ public class BlackjackEngine
                     HandDescription = handInfo.GetHandDescription()
                 });
 
-                // Create detailed result message and queue it with delay
+                // Create result message with proper bank progression
                 string handDisplay = player.Hands.Count > 1 ? $" Hand {handIndex + 1}" : "";
                 string resultMessage;
 
-                // For display: use turn start bank for first hand, then actual bank before each subsequent hand
-                int displayBankBefore = handIndex == 0 ? displayStartBank : bankBeforeThisHand;
+                // Calculate what the "before" bank should show for this specific hand
+                int displayBankBefore;
+                if (handIndex == 0)
+                {
+                    // First hand: always show the original pre-deal bank
+                    displayBankBefore = player.PreDealBank;
+                }
+                else
+                {
+                    // Subsequent hands: show the bank after the previous hand
+                    displayBankBefore = currentDisplayBank;
+                }
 
                 if (result == "WIN" || result == "BLACKJACK")
                 {
-                    resultMessage = $"{player.Name}{handDisplay}: WIN - Won {winAmount} | Bank: {displayBankBefore} -> {bankAfterThisHand}";
+                    resultMessage = $"{player.Name}{handDisplay}: {result} - Won {winAmount} | Bank: {displayBankBefore} -> {bankAfterThisHand}";
                 }
                 else if (result == "PUSH")
                 {
@@ -646,6 +660,9 @@ public class BlackjackEngine
                 {
                     resultMessage = $"{player.Name}{handDisplay}: {result} - Lost {bet} | Bank: {displayBankBefore} -> {bankAfterThisHand}";
                 }
+
+                // Update display bank for next hand
+                currentDisplayBank = bankAfterThisHand;
 
                 // Queue the result message with dealer delay
                 SendDealerMessage(resultMessage);

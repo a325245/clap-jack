@@ -392,9 +392,85 @@ namespace SamplePlugin
 
             if (engine.CurrentTable.DealerHand.Count > 0)
             {
-                string dealerDisplay = engine.CurrentTable.GetDealerHandDisplay(!engine.CurrentTable.HoleCardRevealed);
-                ImGui.Text($"Cards: {dealerDisplay}");
+                // Create a larger area for dealer cards - minimum 100px tall
+                ImGui.BeginChild("DealerCardArea", new Vector2(0, 120), true); // 120px tall bordered area
 
+                ImGui.Text("Cards: ");
+                ImGui.SameLine();
+
+                // Move cards 20 pixels to the right
+                var startPos = ImGui.GetCursorScreenPos();
+                ImGui.SetCursorScreenPos(startPos + new Vector2(20, 0));
+
+                for (int cardIndex = 0; cardIndex < engine.CurrentTable.DealerHand.Count; cardIndex++)
+                {
+                    if (cardIndex > 0) ImGui.SameLine();
+
+                    // Don't show hole card if not revealed
+                    bool isHoleCard = cardIndex == 1 && !engine.CurrentTable.HoleCardRevealed;
+
+                    var drawList = ImGui.GetWindowDrawList();
+                    var pos = ImGui.GetCursorScreenPos();
+                    var cardSize = new Vector2(64, 92); // Increased size for dealer area
+
+                    if (isHoleCard)
+                    {
+                        // Draw hidden card - darker background with "?" 
+                        drawList.AddRectFilled(pos, pos + cardSize, ImGui.ColorConvertFloat4ToU32(new Vector4(0.3f, 0.3f, 0.3f, 1)));
+                        drawList.AddRect(pos, pos + cardSize, ImGui.ColorConvertFloat4ToU32(new Vector4(0.8f, 0.8f, 0.8f, 1f)), 4.0f, ImDrawFlags.RoundCornersAll, 2.0f);
+
+                        var textPos = pos + cardSize * 0.5f;
+                        var questionText = "?";
+                        var textSize = ImGui.CalcTextSize(questionText);
+                        textPos -= textSize * 0.5f;
+
+                        drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(new Vector4(1, 1, 1, 1)), questionText);
+                    }
+                    else
+                    {
+                        // Draw revealed card
+                        var card = engine.CurrentTable.DealerHand[cardIndex];
+
+                        // Card background (white)
+                        drawList.AddRectFilled(pos, pos + cardSize, ImGui.ColorConvertFloat4ToU32(new Vector4(1, 1, 1, 1)));
+
+                        // Card border
+                        Vector4 borderColor = card.IsRed ? new Vector4(1, 0.2f, 0.2f, 1f) : new Vector4(0.2f, 0.2f, 0.2f, 1f);
+                        drawList.AddRect(pos, pos + cardSize, ImGui.ColorConvertFloat4ToU32(borderColor), 4.0f, ImDrawFlags.RoundCornersAll, 2.0f);
+
+                        // Card text (center aligned)
+                        var textPos = pos + cardSize * 0.5f;
+                        var cardText = card.GetCardDisplay();
+                        var textSize = ImGui.CalcTextSize(cardText);
+                        textPos -= textSize * 0.5f;
+
+                        drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(borderColor), cardText);
+                    }
+
+                    // Invisible button for interaction
+                    ImGui.SetCursorScreenPos(pos);
+                    ImGui.InvisibleButton($"dealercard_{cardIndex}", cardSize);
+
+                    // Tooltip
+                    if (ImGui.IsItemHovered())
+                    {
+                        if (isHoleCard)
+                        {
+                            ImGui.SetTooltip("Hidden Card");
+                        }
+                        else
+                        {
+                            ImGui.SetTooltip(engine.CurrentTable.DealerHand[cardIndex].GetCardDisplay());
+                        }
+                    }
+
+                    // Move cursor for next card with more spacing
+                    ImGui.SetCursorScreenPos(pos + new Vector2(cardSize.X + 8, 0));
+                }
+
+                ImGui.EndChild(); // End the dealer card area
+
+                // Score display below the card area
                 if (engine.CurrentTable.HoleCardRevealed)
                 {
                     int dealerScore = engine.CurrentTable.GetDealerScore();
