@@ -8,7 +8,7 @@
         "AssemblyVersion": "3.2.0.0",
         "RepoUrl": "https://github.com/a325245/clap-jack",
         "ApplicableVersion": "any",
-        "DalamudApiLevel": 10,
+        "DalamudApiLevel": 9,
         "DownloadCount": 0,
         "LastUpdate": "1735080000",
         "DownloadLinkInstall": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/SamplePlugin.zip",

@@ -31,8 +31,11 @@ public class Player
     public int GamesPlayed { get; set; } = 0;
     public int GamesWon { get; set; } = 0;
     public int TotalWinnings { get; set; } = 0;
-    public int TurnStartBank { get; set; } = 0; // Bank at start of current turn
-    public int PreDealBank { get; set; } = 0; // Bank before any bets deducted
+    public int TurnStartBank { get; set; } = 0;
+    public int PreDealBank { get; set; } = 0;
+
+    // Roulette
+    public List<RouletteBet> RouletteBets { get; set; } = new();
 
     public Player(string name, string server = "")
     {

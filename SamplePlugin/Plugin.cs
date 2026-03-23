@@ -9,6 +9,7 @@ using Dalamud.Game.Text.SeStringHandling;
 using SamplePlugin.Windows;
 using SamplePlugin.Engine;
 using SamplePlugin.Commands;
+using SamplePlugin.Chat;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -34,7 +35,9 @@ namespace SamplePlugin
         public Configuration Configuration { get; init; }
 
         public BlackjackEngine Engine { get; init; }
+        public RouletteEngine RouletteEngine { get; init; }
         public CommandParser CommandParser { get; init; }
+        public ChatHandler ChatHandler { get; init; }
         public PluginUI UI { get; init; }
 
         private string AdminName { get; set; } = string.Empty;
@@ -63,7 +66,14 @@ namespace SamplePlugin
             PluginAccessorInstance = this;
 
             Engine = new BlackjackEngine();
-            CommandParser = new CommandParser(Engine);
+            RouletteEngine = new RouletteEngine(Engine.CurrentTable);
+            CommandParser = new CommandParser(Engine, RouletteEngine);
+            ChatHandler = new ChatHandler();
+
+            // Wire up roulette events (reuse same send helpers)
+            RouletteEngine.OnChatMessage += SendGameMessage;
+            RouletteEngine.OnPlayerTell += SendPlayerTell;
+            RouletteEngine.OnUIUpdate += () => { };
 
             // Wire up callbacks
             Engine.OnChatMessage += SendGameMessage;
@@ -93,12 +103,39 @@ namespace SamplePlugin
         private void ChatGui_ChatMessage(XivChatType type, int timestamp, ref SeString sender, ref SeString message, ref bool isHandled)
         {
             var text = message.TextValue.Trim();
-            var senderName = sender.TextValue;
+            var rawSender = sender.TextValue;
+
+            // Strip any leading special/icon characters from the sender name
+            // Party chat prefixes names with job icons (e.g. "🎴Jess Dee" → "Jess Dee")
+            var senderName = StripSenderPrefix(rawSender);
+
+            // Log EVERY chat message to identify party chat type
+            Log.Information($"[CHAT] type={type} ({(int)type}), rawSender='{rawSender}', cleanSender='{senderName}', msg='{text}'");
+
+            // Also store recent chat in UI for debugging
+            UI.AddDebugChat($"[{(int)type}:{type}] {rawSender} ({senderName}): {text}");
 
             if (string.IsNullOrEmpty(senderName) || !text.StartsWith(">")) return;
 
-            // Use the engine's mode and admin name from UI
-            CommandParser.Parse(senderName, text, UI.AdminName, Engine.Mode);
+            // Detect what channel this came from
+            ChatChannel sourceChannel = ChatHandler.DetectChatChannel(type);
+
+            Log.Information($"[CHAT] Command detected! sourceChannel={sourceChannel}, cleanSender='{senderName}'");
+
+            // Process command using the clean sender name and correct source channel
+            CommandParser.Parse(senderName, text, UI.AdminName, Engine.Mode, sourceChannel);
+        }
+
+        // Strips leading non-letter characters (job icons, party markers, etc.) from FFXIV sender names
+        private string StripSenderPrefix(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name;
+
+            int start = 0;
+            while (start < name.Length && !char.IsLetter(name[start]))
+                start++;
+
+            return name.Substring(start).Trim();
         }
 
         public void Dispose()
@@ -117,6 +154,13 @@ namespace SamplePlugin
 
         private void OnCommand(string command, string args)
         {
+            // Debug command to show all chat types
+            if (args == "debug")
+            {
+                Log.Information("Debug mode activated - will log all chat messages for analysis");
+                // You can use this to see what XivChatType values are being used
+            }
+
             UI.IsVisible = !UI.IsVisible;
         }
 
@@ -211,8 +255,12 @@ namespace SamplePlugin
             // Update timer every frame
             Engine.UpdateTimer();
 
-            // Process dealer message queue with delays
+            // Process blackjack message queue with delays
             Engine.ProcessDealerMessageQueue();
+
+            // Process roulette spin state machine (4-second delay then resolve)
+            RouletteEngine.ProcessSpin();
+            RouletteEngine.ProcessMessageQueue();
 
             ProcessMessageQueue();
             UI.Draw();

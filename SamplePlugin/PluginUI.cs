@@ -24,7 +24,16 @@ namespace SamplePlugin
 
         // Quick add fields
         private string quickAddPlayerName = string.Empty;
-        private string selectedPlayerName = string.Empty;
+
+        // Debug chat log - stores recent raw chat messages with their types
+        private Queue<string> DebugChatLog { get; } = new();
+        private const int MaxDebugLines = 20;
+        public void AddDebugChat(string line)
+        {
+            DebugChatLog.Enqueue(line);
+            if (DebugChatLog.Count > MaxDebugLines)
+                DebugChatLog.Dequeue();
+        }
 
         // Old UI state (keeping for other tabs)
         private string playerAddName = string.Empty;
@@ -91,6 +100,12 @@ namespace SamplePlugin
                         ImGui.EndTabItem();
                     }
 
+                    if (ImGui.BeginTabItem("🔍 Chat Debug##tab5"))
+                    {
+                        DrawChatDebugTab();
+                        ImGui.EndTabItem();
+                    }
+
                     ImGui.EndTabBar();
                 }
 
@@ -102,21 +117,24 @@ namespace SamplePlugin
         {
             ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), "🎮 BLACKJACK TABLE");
 
-            // Mode selection
             ImGui.Separator();
-            ImGui.Text("Interface Mode:");
+
+            // Game type selector
+            ImGui.Text("Game:");
             ImGui.SameLine();
             ImGui.SetNextItemWidth(120);
-            int uiMode = (int)engine.UIMode;
-            string[] uiModes = { "Dealer", "Player" };
-            if (ImGui.Combo("##uimode", ref uiMode, uiModes, uiModes.Length))
+            int gameType = (int)engine.CurrentTable.GameType;
+            string[] gameTypes = { "Blackjack", "Roulette" };
+            if (ImGui.Combo("##gametype", ref gameType, gameTypes, gameTypes.Length))
             {
-                engine.UIMode = (Models.UIMode)uiMode;
+                engine.CurrentTable.GameType = (Models.GameType)gameType;
+                // Reset game state when switching
+                engine.CurrentTable.GameState = Models.GameState.Lobby;
             }
 
             // Chat Mode selection
             ImGui.SameLine();
-            ImGui.Text("Chat Mode:");
+            ImGui.Text("Chat:");
             ImGui.SameLine();
             ImGui.SetNextItemWidth(80);
             int chatMode = (int)engine.ChatMode;
@@ -124,19 +142,300 @@ namespace SamplePlugin
             if (ImGui.Combo("##chatmode", ref chatMode, chatModes, chatModes.Length))
             {
                 engine.ChatMode = (Models.ChatMode)chatMode;
+                plugin.RouletteEngine.ChatMode = (Models.ChatMode)chatMode;
             }
 
             ImGui.Separator();
 
-            if (engine.UIMode == Models.UIMode.Dealer)
-            {
+            if (engine.CurrentTable.GameType == Models.GameType.Roulette)
+                DrawRouletteInterface();
+            else
                 DrawDealerInterface();
+        }
+
+
+        // ── ROULETTE UI ─────────────────────────────────────────────────────────
+
+        private string rouletteTargetInput = string.Empty;
+        private int rouletteBetAmount = 50;
+        private string rouletteProxyPlayer = string.Empty;
+
+        private static readonly int[] RedNumbers = { 1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36 };
+
+        // Standard roulette table layout: 3 rows, 12 columns
+        // Row 0 (top): 3,6,9,12,15,18,21,24,27,30,33,36
+        // Row 1 (mid): 2,5,8,11,14,17,20,23,26,29,32,35
+        // Row 2 (bot): 1,4,7,10,13,16,19,22,25,28,31,34
+        private static readonly int[,] RouletteGrid = {
+            { 3,  6,  9, 12, 15, 18, 21, 24, 27, 30, 33, 36 },
+            { 2,  5,  8, 11, 14, 17, 20, 23, 26, 29, 32, 35 },
+            { 1,  4,  7, 10, 13, 16, 19, 22, 25, 28, 31, 34 }
+        };
+
+        private void DrawRouletteInterface()
+        {
+            var table = engine.CurrentTable;
+            var roulette = plugin.RouletteEngine;
+
+            // ── Wheel + last result ─────────────────────────────────────────────
+            DrawRouletteWheel();
+
+            ImGui.Separator();
+
+            // ── Spin button - dealer controlled, no timer ───────────────────────
+            if (table.GameState == Models.GameState.Lobby && table.RouletteSpinState == Models.RouletteSpinState.Idle)
+            {
+                if (ImGui.Button("🎡  SPIN  ", new Vector2(120, 36)))
+                    roulette.StartSpin("Dealer", out _);
+                ImGui.SameLine();
+                ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1), "Place bets, then hit SPIN.");
+            }
+            else if (table.RouletteSpinState == Models.RouletteSpinState.Spinning)
+            {
+                ImGui.TextColored(new Vector4(1, 0.8f, 0, 1), "🎡  No more bets! Wheel spinning...");
+            }
+            else if (table.RouletteSpinState == Models.RouletteSpinState.Resolving)
+            {
+                ImGui.TextColored(new Vector4(0, 1, 0.5f, 1), "✅  Resolving payouts...");
+            }
+
+            ImGui.Separator();
+
+            // ── Horizontal number grid ──────────────────────────────────────────
+            DrawRouletteNumberGrid();
+
+            ImGui.Separator();
+
+            // ── Proxy bet controls ──────────────────────────────────────────────
+            ImGui.TextColored(new Vector4(1, 1, 0, 1), "PLACE BET");
+
+            ImGui.SetNextItemWidth(150);
+            ImGui.InputTextWithHint("##rproxyplayer", "Player name", ref rouletteProxyPlayer, 64);
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(70);
+            ImGui.InputInt("##rbetamt", ref rouletteBetAmount);
+            if (rouletteBetAmount < table.MinBet) rouletteBetAmount = table.MinBet;
+            ImGui.SameLine();
+            ImGui.Text("ON");
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(180);
+            ImGui.InputTextWithHint("##rtargets", "RED, EVEN, 14, 7 ...", ref rouletteTargetInput, 128);
+            ImGui.SameLine();
+            if (ImGui.Button("Bet##rbetbtn") && !string.IsNullOrWhiteSpace(rouletteProxyPlayer) && !string.IsNullOrWhiteSpace(rouletteTargetInput))
+                roulette.PlaceBet(rouletteProxyPlayer, rouletteBetAmount, rouletteTargetInput, out _);
+            ImGui.SameLine();
+            if (ImGui.Button("Clear##rclearbtn") && !string.IsNullOrWhiteSpace(rouletteProxyPlayer))
+                roulette.ClearPlayerBets(rouletteProxyPlayer);
+
+            ImGui.Separator();
+
+            // ── Player list ─────────────────────────────────────────────────────
+            ImGui.TextColored(new Vector4(0.5f, 1, 1, 1), "PLAYERS");
+
+            if (ImGui.BeginTable("##rplayers", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+            {
+                ImGui.TableSetupColumn("Player",  ImGuiTableColumnFlags.None, 120);
+                ImGui.TableSetupColumn("Bank",    ImGuiTableColumnFlags.None, 70);
+                ImGui.TableSetupColumn("Bets",    ImGuiTableColumnFlags.None, 200);
+                ImGui.TableSetupColumn("Risk",    ImGuiTableColumnFlags.None, 60);
+                ImGui.TableHeadersRow();
+
+                foreach (var player in table.Players.Values)
+                {
+                    ImGui.TableNextRow();
+
+                    // Player name (grey if AFK)
+                    ImGui.TableSetColumnIndex(0);
+                    if (player.IsAfk)
+                        ImGui.TextColored(new Vector4(0.5f,0.5f,0.5f,1), $"{player.Name} (AFK)");
+                    else
+                        ImGui.Text(player.Name);
+
+                    // Bank
+                    ImGui.TableSetColumnIndex(1);
+                    ImGui.Text($"{player.Bank}G");
+
+                    // Bets list
+                    ImGui.TableSetColumnIndex(2);
+                    if (player.RouletteBets.Count == 0)
+                    {
+                        ImGui.TextColored(new Vector4(0.4f,0.4f,0.4f,1), "No bets");
+                    }
+                    else
+                    {
+                        var betStr = string.Join("  ", player.RouletteBets.Select(b =>
+                        {
+                            uint col = b.Target == "RED"   ? 0xFF3333FF :
+                                       b.Target == "BLACK" ? 0xFFAAAAAA :
+                                                             0xFF55FF55;
+                            return $"[{b.Target}:{b.Amount}G]";
+                        }));
+                        ImGui.TextUnformatted(betStr);
+                    }
+
+                    // Total risk
+                    ImGui.TableSetColumnIndex(3);
+                    int risk = player.RouletteBets.Sum(b => b.Amount);
+                    if (risk > 0)
+                        ImGui.TextColored(new Vector4(1,0.7f,0,1), $"{risk}G");
+                    else
+                        ImGui.TextColored(new Vector4(0.4f,0.4f,0.4f,1), "-");
+                }
+
+                ImGui.EndTable();
+            }
+
+            ImGui.Separator();
+            DrawPlayersManagementTab();
+        }
+
+        private void DrawRouletteWheel()
+        {
+            var table = engine.CurrentTable;
+            var drawList = ImGui.GetWindowDrawList();
+            var pos = ImGui.GetCursorScreenPos();
+            float cx = pos.X + 70, cy = pos.Y + 70;
+            float radius = 62;
+            float segAngle = (float)(2 * Math.PI / 37);
+            const float TwoPI = (float)(2 * Math.PI);
+
+            // Calculate rotation angles
+            float wheelRotation = 0f; // wheel spins clockwise
+            float needleAngle;        // needle spins counter-clockwise
+
+            if (table.RouletteSpinState == Models.RouletteSpinState.Spinning)
+            {
+                double ms    = (DateTime.Now - table.RouletteSpinStart).TotalMilliseconds;
+                // Speed eases from fast → slow over 4 seconds
+                double speed = Math.Max(0.04, 0.9 - (ms / 4000.0) * 0.86);
+
+                // Wheel rotates clockwise (+)
+                wheelRotation = (float)(ms * speed * 0.018) % TwoPI;
+
+                // Needle rotates counter-clockwise (-) at ~1.4x wheel speed
+                needleAngle = -(float)(ms * speed * 0.025) % TwoPI;
+            }
+            else if (table.RouletteResult.HasValue)
+            {
+                // When idle, needle points at the winning number, wheel is stationary
+                needleAngle = table.RouletteResult.Value * segAngle - (float)(Math.PI / 2);
             }
             else
             {
-                DrawPlayerInterface();
+                needleAngle = -(float)(Math.PI / 2);
             }
+
+            // Wheel background
+            drawList.AddCircleFilled(new Vector2(cx, cy), radius, 0xFF1a1a1a, 64);
+            drawList.AddCircle(new Vector2(cx, cy), radius, 0xFFFFD700, 64, 2f);
+
+            // 37 colored segments — offset by wheelRotation so the wheel body actually turns
+            for (int i = 0; i <= 36; i++)
+            {
+                float a1 = i * segAngle - (float)(Math.PI / 2) + wheelRotation;
+                float a2 = a1 + segAngle;
+                uint color = i == 0 ? 0xFF00AA00 : Array.IndexOf(RedNumbers, i) >= 0 ? 0xFF2233CC : 0xFF222222;
+                var c  = new Vector2(cx, cy);
+                var p1 = new Vector2(cx + (float)Math.Cos(a1) * (radius - 3), cy + (float)Math.Sin(a1) * (radius - 3));
+                var p2 = new Vector2(cx + (float)Math.Cos(a2) * (radius - 3), cy + (float)Math.Sin(a2) * (radius - 3));
+                drawList.AddTriangleFilled(c, p1, p2, color);
+            }
+
+            // Gold outer ring on top of segments
+            drawList.AddCircle(new Vector2(cx, cy), radius, 0xFFFFD700, 64, 2f);
+
+            // Needle — counter-clockwise, drawn on top of the wheel
+            var tip = new Vector2(
+                cx + (float)Math.Cos(needleAngle) * (radius - 6),
+                cy + (float)Math.Sin(needleAngle) * (radius - 6));
+            drawList.AddLine(new Vector2(cx, cy), tip, 0xFFFFFFFF, 2f);
+            drawList.AddCircleFilled(new Vector2(cx, cy), 5, 0xFFFFD700);
+
+            // Center number display when idle
+            if (table.RouletteResult.HasValue && table.RouletteSpinState == Models.RouletteSpinState.Idle)
+            {
+                string col   = Engine.RouletteEngine.GetColor(table.RouletteResult.Value);
+                uint textCol = col == "RED" ? 0xFF3333FF : col == "GREEN" ? 0xFF00CC00 : 0xFFCCCCCC;
+                var sz = ImGui.CalcTextSize(table.RouletteResult.Value.ToString());
+                drawList.AddText(new Vector2(cx - sz.X * 0.5f, cy - sz.Y * 0.5f), textCol, table.RouletteResult.Value.ToString());
+            }
+
+            // Right of wheel: last result summary
+            ImGui.SetCursorScreenPos(new Vector2(pos.X + 155, pos.Y + 10));
+            ImGui.BeginGroup();
+
+            if (table.RouletteResult.HasValue && table.RouletteSpinState == Models.RouletteSpinState.Idle)
+            {
+                int r    = table.RouletteResult.Value;
+                string c = Engine.RouletteEngine.GetColor(r);
+                Vector4 cv = c == "RED"   ? new Vector4(1,0.2f,0.2f,1) :
+                             c == "GREEN" ? new Vector4(0,1,0,1) :
+                                            new Vector4(0.8f,0.8f,0.8f,1);
+                ImGui.TextColored(new Vector4(0.6f,0.6f,0.6f,1), "Last result:");
+                ImGui.TextColored(cv, $"  {r}  {c}");
+            }
+            else if (table.RouletteSpinState == Models.RouletteSpinState.Spinning)
+            {
+                ImGui.TextColored(new Vector4(1,1,0,1), "🎡 Spinning...");
+            }
+            else
+            {
+                ImGui.TextColored(new Vector4(0.5f,0.5f,0.5f,1), "Awaiting first spin");
+            }
+
+            ImGui.EndGroup();
+            ImGui.SetCursorScreenPos(new Vector2(pos.X, pos.Y + 152));
         }
+
+        private void DrawRouletteNumberGrid()
+        {
+            var drawList = ImGui.GetWindowDrawList();
+            var startPos = ImGui.GetCursorScreenPos();
+            float cellW = 28, cellH = 22, pad = 2;
+
+            // 0 cell on the left spanning all 3 rows
+            float zeroH = cellH * 3 + pad * 2;
+            var zeroTL = startPos;
+            var zeroBR = new Vector2(startPos.X + cellW, startPos.Y + zeroH);
+            bool zeroWin = engine.CurrentTable.RouletteResult == 0 && engine.CurrentTable.RouletteSpinState == Models.RouletteSpinState.Idle && engine.CurrentTable.RouletteResult.HasValue;
+            drawList.AddRectFilled(zeroTL, zeroBR, zeroWin ? 0xFFFFFFFF : 0xFF00AA00, 3);
+            drawList.AddRect(zeroTL, zeroBR, 0xFF888888, 3);
+            var zeroSz = ImGui.CalcTextSize("0");
+            drawList.AddText(new Vector2(zeroTL.X + cellW * 0.5f - zeroSz.X * 0.5f, zeroTL.Y + zeroH * 0.5f - zeroSz.Y * 0.5f), zeroWin ? 0xFF000000 : 0xFFFFFFFF, "0");
+
+            // 3 rows x 12 columns of numbers
+            for (int row = 0; row < 3; row++)
+            {
+                for (int col = 0; col < 12; col++)
+                {
+                    int n = RouletteGrid[row, col];
+                    float x = startPos.X + cellW + pad + col * (cellW + pad);
+                    float y = startPos.Y + row * (cellH + pad);
+
+                    bool isWin = engine.CurrentTable.RouletteResult == n &&
+                                 engine.CurrentTable.RouletteSpinState == Models.RouletteSpinState.Idle &&
+                                 engine.CurrentTable.RouletteResult.HasValue;
+
+                    uint bg = isWin ? 0xFFFFFFFF :
+                              Array.IndexOf(RedNumbers, n) >= 0 ? 0xFF2233CC : 0xFF111111;
+
+                    drawList.AddRectFilled(new Vector2(x, y), new Vector2(x + cellW, y + cellH), bg, 2);
+                    drawList.AddRect(new Vector2(x, y), new Vector2(x + cellW, y + cellH), 0xFF555555, 2);
+
+                    var ns  = n.ToString();
+                    var nSz = ImGui.CalcTextSize(ns);
+                    drawList.AddText(
+                        new Vector2(x + cellW * 0.5f - nSz.X * 0.5f, y + cellH * 0.5f - nSz.Y * 0.5f),
+                        isWin ? 0xFF000000 : 0xFFFFFFFF, ns);
+                }
+            }
+
+            // Advance cursor past the grid
+            float gridW = cellW + pad + 12 * (cellW + pad);
+            ImGui.SetCursorScreenPos(new Vector2(startPos.X, startPos.Y + zeroH + 8));
+        }
+
+        // ── BLACKJACK UI ─────────────────────────────────────────────────────────
 
         private void DrawDealerInterface()
         {
@@ -230,136 +529,6 @@ namespace SamplePlugin
 
             // Players Management merged here
             DrawPlayersManagementTab();
-        }
-
-        private void DrawPlayerInterface()
-        {
-            ImGui.TextColored(new Vector4(0.5f, 1f, 0.5f, 1f), "PLAYER INTERFACE");
-
-            // Player selection
-            ImGui.SetNextItemWidth(200);
-            ImGui.InputTextWithHint("##playerSelect", "Enter your player name", ref selectedPlayerName, 100);
-
-            var selectedPlayer = engine.CurrentTable.Players.Values.FirstOrDefault(p => 
-                p.Name.Equals(selectedPlayerName, StringComparison.OrdinalIgnoreCase));
-
-            if (selectedPlayer != null)
-            {
-                ImGui.Separator();
-
-                // Player info display
-                ImGui.Text($"Player: {selectedPlayer.Name} ({selectedPlayer.Server})");
-                ImGui.Text($"Bank: {selectedPlayer.Bank}");
-                ImGui.Text($"Current Bet: {selectedPlayer.PersistentBet}");
-
-                // Bet adjustment
-                ImGui.Separator();
-                ImGui.Text("Adjust Bet:");
-                ImGui.SetNextItemWidth(100);
-                int newBet = selectedPlayer.PersistentBet;
-                if (ImGui.InputInt("##newbet", ref newBet))
-                {
-                    if (newBet >= engine.CurrentTable.MinBet && newBet <= engine.CurrentTable.MaxBet && newBet <= selectedPlayer.Bank)
-                    {
-                        selectedPlayer.PersistentBet = newBet;
-                    }
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("Set Bet"))
-                {
-                    engine.SetPlayerBet(selectedPlayer.Name, newBet);
-                }
-
-                // Player cards display
-                if (selectedPlayer.Hands.Count > 0)
-                {
-                    ImGui.Separator();
-                    ImGui.Text("Your Cards:");
-
-                    for (int handIndex = 0; handIndex < selectedPlayer.Hands.Count; handIndex++)
-                    {
-                        var handInfo = selectedPlayer.GetHandInfo(handIndex);
-                        if (handInfo.Cards.Count > 0)
-                        {
-                            string handLabel = selectedPlayer.Hands.Count > 1 ? $"Hand {handIndex + 1}: " : "Cards: ";
-                            ImGui.Text(handLabel);
-
-                            // Display cards horizontally
-                            ImGui.SameLine();
-                            for (int cardIndex = 0; cardIndex < handInfo.Cards.Count; cardIndex++)
-                            {
-                                var card = handInfo.Cards[cardIndex];
-                                if (cardIndex > 0) ImGui.SameLine();
-
-                                // Draw styled card
-                                var drawList = ImGui.GetWindowDrawList();
-                                var pos = ImGui.GetCursorScreenPos();
-                                var cardSize = new Vector2(48, 68);
-
-                                drawList.AddRectFilled(pos, pos + cardSize, ImGui.ColorConvertFloat4ToU32(new Vector4(1, 1, 1, 1)));
-                                Vector4 borderColor = card.IsRed ? new Vector4(1, 0.2f, 0.2f, 1f) : new Vector4(0.2f, 0.2f, 0.2f, 1f);
-                                drawList.AddRect(pos, pos + cardSize, ImGui.ColorConvertFloat4ToU32(borderColor), 4.0f, ImDrawFlags.RoundCornersAll, 2.0f);
-
-                                var textPos = pos + cardSize * 0.5f;
-                                var cardText = card.GetCardDisplay();
-                                var textSize = ImGui.CalcTextSize(cardText);
-                                textPos -= textSize * 0.5f;
-
-                                drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(borderColor), cardText);
-
-                                ImGui.SetCursorScreenPos(pos);
-                                ImGui.InvisibleButton($"playercard_{handIndex}_{cardIndex}", cardSize);
-                                ImGui.SetCursorScreenPos(pos + new Vector2(cardSize.X + 4, 0));
-                            }
-
-                            ImGui.Text($"Value: {handInfo.GetHandDescription()}");
-                            if (handIndex < selectedPlayer.CurrentBets.Count)
-                            {
-                                ImGui.Text($"Bet: {selectedPlayer.CurrentBets[handIndex]}");
-                            }
-                        }
-                    }
-                }
-
-                // Action buttons
-                ImGui.Separator();
-                ImGui.Text("Player Actions:");
-
-                if (ImGui.Button("HIT"))
-                {
-                    engine.SendChatMessage($"/say >HIT");
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("STAND"))
-                {
-                    engine.SendChatMessage($"/say >STAND");
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("DOUBLE"))
-                {
-                    engine.SendChatMessage($"/say >DOUBLE");
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("SPLIT"))
-                {
-                    engine.SendChatMessage($"/say >SPLIT");
-                }
-
-                // Other commands
-                if (ImGui.Button("Check Bank"))
-                {
-                    engine.SendChatMessage($"/say >BANK");
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("Go AFK"))
-                {
-                    engine.SendChatMessage($"/say >AFK");
-                }
-            }
-            else if (!string.IsNullOrEmpty(selectedPlayerName))
-            {
-                ImGui.Text("Player not found in current table");
-            }
         }
 
         private void DrawGameStatusHeader()
@@ -1516,6 +1685,30 @@ namespace SamplePlugin
             {
                 ImGui.Text("No players to show statistics for.");
             }
+        }
+
+        private void DrawChatDebugTab()
+        {
+            ImGui.TextColored(new Vector4(1f, 0.5f, 0f, 1f), "CHAT DEBUG - ALL INCOMING MESSAGES");
+            ImGui.TextWrapped("Every chat message received is shown here with its XivChatType number. Look for your party messages to find the correct type.");
+            ImGui.Separator();
+
+            if (ImGui.Button("Clear##cleardebug"))
+                DebugChatLog.Clear();
+
+            ImGui.Separator();
+
+            ImGui.BeginChild("##debugchatscroll", new Vector2(0, 400), true);
+            foreach (var line in DebugChatLog)
+            {
+                // Highlight lines containing ">" commands
+                if (line.Contains(">"))
+                    ImGui.TextColored(new Vector4(0, 1, 0.5f, 1f), line);
+                else
+                    ImGui.TextUnformatted(line);
+            }
+            ImGui.SetScrollHereY(1.0f);
+            ImGui.EndChild();
         }
 
         private void DrawLogTab()

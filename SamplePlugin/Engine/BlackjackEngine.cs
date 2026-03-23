@@ -9,7 +9,6 @@ public class BlackjackEngine
     public Models.Table CurrentTable { get; set; }
     public Models.DealerMode Mode { get; set; } = Models.DealerMode.Auto;
     public Models.ChatMode ChatMode { get; set; } = Models.ChatMode.Say;
-    public Models.UIMode UIMode { get; set; } = Models.UIMode.Dealer;
     private Stack<Models.Table> StateHistory { get; set; } = new();
 
     public Action<string>? OnChatMessage { get; set; }
@@ -36,7 +35,7 @@ public class BlackjackEngine
     // Dealer message queue for delays
     private Queue<string> DealerMessageQueue { get; set; } = new();
     private DateTime LastDealerMessage { get; set; } = DateTime.MinValue;
-    private const int DealerDelayMs = 3000; // 3 seconds
+    private int GetDealerDelayMs() => ChatMode == Models.ChatMode.Say ? 3400 : 3000; // Extra 0.4s for say chat
 
     public BlackjackEngine()
     {
@@ -47,7 +46,7 @@ public class BlackjackEngine
     public void ProcessDealerMessageQueue()
     {
         if (DealerMessageQueue.Count > 0 && 
-            (DateTime.Now - LastDealerMessage).TotalMilliseconds >= DealerDelayMs)
+            (DateTime.Now - LastDealerMessage).TotalMilliseconds >= GetDealerDelayMs())
         {
             var message = DealerMessageQueue.Dequeue();
             SendChatMessage(message);
@@ -230,6 +229,8 @@ public class BlackjackEngine
 
     public void UpdateTimer()
     {
+        // Never run the blackjack turn timer when playing roulette
+        if (CurrentTable.GameType != Models.GameType.Blackjack) return;
         if (CurrentTable.GameState != Models.GameState.Playing) return;
 
         int elapsed = (int)(DateTime.Now - CurrentTable.TurnStartTime).TotalSeconds;
@@ -782,17 +783,65 @@ public class BlackjackEngine
         }
     }
 
-    public void SetPlayerBet(string name, int amount)
+    public void SetPlayerBet(string name, int amount, SamplePlugin.Chat.ChatChannel? responseChannel = null)
     {
+        LogAction($"SetPlayerBet called: {name}, {amount}, responseChannel={responseChannel}");
+
         if (CurrentTable.GameState != Models.GameState.Lobby) return;
 
         var player = GetPlayer(name);
         if (player != null && amount >= CurrentTable.MinBet && amount <= CurrentTable.MaxBet && amount <= player.Bank)
         {
+            int oldBet = player.PersistentBet;
             player.PersistentBet = amount;
             player.IsAfk = false;
-            LogAction($"{name} set bet to {amount}");
+            LogAction($"{name} set bet to {amount} (was {oldBet})");
+
+            // Send response in the same chat channel the command came from
+            if (responseChannel.HasValue)
+            {
+                string chatCmd = responseChannel.Value == SamplePlugin.Chat.ChatChannel.Party ? "/party " : "/say ";
+                LogAction($"Sending bet response via {responseChannel.Value}: {chatCmd}{name} bet updated to {amount}");
+                OnChatMessage?.Invoke($"{chatCmd}{name} bet updated to {amount}");
+            }
+            else
+            {
+                LogAction($"Using default SendChatMessage for bet response: {name} bet updated to {amount}");
+                SendChatMessage($"{name} bet updated to {amount}");
+            }
+
+            OnUIUpdate?.Invoke();
         }
+        else if (player != null)
+        {
+            string reason = "";
+            if (amount < CurrentTable.MinBet) reason = $"minimum bet is {CurrentTable.MinBet}";
+            else if (amount > CurrentTable.MaxBet) reason = $"maximum bet is {CurrentTable.MaxBet}";
+            else if (amount > player.Bank) reason = $"insufficient funds (have {player.Bank})";
+
+            // Send error response in the same chat channel
+            if (responseChannel.HasValue)
+            {
+                string chatCmd = responseChannel.Value == SamplePlugin.Chat.ChatChannel.Party ? "/party " : "/say ";
+                OnChatMessage?.Invoke($"{chatCmd}{name} bet update failed: {reason}");
+            }
+            else
+            {
+                SendChatMessage($"{name} bet update failed: {reason}");
+            }
+        }
+    }
+
+    // Keep backwards compatibility
+    public void SetPlayerBet(string name, int amount, Models.ChatMode? responseChatMode = null)
+    {
+        var channel = responseChatMode == Models.ChatMode.Party ? SamplePlugin.Chat.ChatChannel.Party : SamplePlugin.Chat.ChatChannel.Say;
+        SetPlayerBet(name, amount, channel);
+    }
+
+    public void SetPlayerBet(string name, int amount)
+    {
+        SetPlayerBet(name, amount, (SamplePlugin.Chat.ChatChannel?)null);
     }
 
     public void ToggleAFK(string name)

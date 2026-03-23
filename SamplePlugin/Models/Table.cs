@@ -21,6 +21,12 @@ public class Table
     public int TurnTimeLimit { get; set; } = 60;
 
     public GameState GameState { get; set; } = GameState.Lobby;
+    public GameType GameType { get; set; } = GameType.Blackjack;
+
+    // Roulette
+    public int? RouletteResult { get; set; } = null;
+    public RouletteSpinState RouletteSpinState { get; set; } = RouletteSpinState.Idle;
+    public DateTime RouletteSpinStart { get; set; }
 
     // Dealer rules and properties
     public DealerRules DealerRules { get; set; } = DealerRules.HitsOnSoft17;

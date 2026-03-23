@@ -25,8 +25,15 @@ public enum ChatMode
     Party
 }
 
-public enum UIMode
+public enum GameType
 {
-    Dealer,
-    Player
+    Blackjack,
+    Roulette
+}
+
+public enum RouletteSpinState
+{
+    Idle,
+    Spinning,
+    Resolving
 }
