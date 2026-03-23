@@ -1,4 +1,4 @@
-﻿using Dalamud.Configuration;
+using Dalamud.Configuration;
 using System;
 
 namespace SamplePlugin;
@@ -14,6 +14,6 @@ public class Configuration : IPluginConfiguration
     // The below exists just to make saving less cumbersome
     public void Save()
     {
-        Plugin.PluginInterface.SavePluginConfig(this);
+        Plugin.PluginAccessorInstance?.SaveConfiguration();
     }
 }
