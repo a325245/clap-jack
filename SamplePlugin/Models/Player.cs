@@ -36,6 +36,7 @@ public class Player
 
     // Roulette
     public List<RouletteBet> RouletteBets { get; set; } = new();
+    public int RouletteNetGains { get; set; } = 0;
 
     public Player(string name, string server = "")
     {

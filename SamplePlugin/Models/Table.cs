@@ -23,6 +23,12 @@ public class Table
     public GameState GameState { get; set; } = GameState.Lobby;
     public GameType GameType { get; set; } = GameType.Blackjack;
 
+    // Configurable message delay (milliseconds, shared by all engines)
+    public int MessageDelayMs { get; set; } = 3000;
+
+    // Announce when players are added to the table
+    public bool AnnounceNewPlayers { get; set; } = true;
+
     // Roulette
     public int? RouletteResult { get; set; } = null;
     public RouletteSpinState RouletteSpinState { get; set; } = RouletteSpinState.Idle;

@@ -35,7 +35,7 @@ public class BlackjackEngine
     // Dealer message queue for delays
     private Queue<string> DealerMessageQueue { get; set; } = new();
     private DateTime LastDealerMessage { get; set; } = DateTime.MinValue;
-    private int GetDealerDelayMs() => ChatMode == Models.ChatMode.Say ? 3400 : 3000; // Extra 0.4s for say chat
+    private int GetDealerDelayMs() => CurrentTable.MessageDelayMs;
 
     public BlackjackEngine()
     {
@@ -61,7 +61,9 @@ public class BlackjackEngine
 
     public void StartGame()
     {
-        SaveState(); // Save state before starting
+        if (CurrentTable.GameState == Models.GameState.Playing) return; // prevent double-deal
+
+        SaveState();
 
         // Validate all players have funds
         var validPlayers = CurrentTable.Players.Values
@@ -121,10 +123,10 @@ public class BlackjackEngine
         CurrentTable.TimerWarningShown = false; // Reset warning flag
 
         LogAction("Game started - cards dealt");
-        SendChatMessage($"Game Started! Cards dealt to {validPlayers.Count} players.");
+        SendDealerMessage($"Game Started! Cards dealt to {validPlayers.Count} players.");
 
         // Show dealer upcard only
-        SendChatMessage($"Dealer shows: {FormatCard(CurrentTable.DealerHand[0])} [Hidden]");
+        SendDealerMessage($"Dealer shows: {FormatCard(CurrentTable.DealerHand[0])} [Hidden]");
 
         // Check for immediate blackjacks
         CheckForNaturalBlackjacks();
@@ -160,10 +162,9 @@ public class BlackjackEngine
         string handDisplay = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
         SendDealerMessage($"{playerName}: {handDisplay} ({handInfo.GetHandDescription()})");
 
-        // Auto-complete if blackjack
+        // Auto-complete if blackjack — no announcement, payout handles it
         if (handInfo.IsBlackjack)
         {
-            SendDealerMessage($"{playerName} has BLACKJACK - auto stand");
             player.IsStanding = true;
             LogAction($"{playerName} auto-completed with blackjack");
             AdvanceToNextTurn(playerName);
@@ -192,7 +193,7 @@ public class BlackjackEngine
         {
             if (player.IsNaturalBlackjack(player.Hands[0]))
             {
-                SendDealerMessage($"{player.Name} has BLACKJACK!");
+                // No announcement here — payout message handles it
                 LogAction($"{player.Name} has natural blackjack");
                 player.IsStanding = true;
                 anyBlackjacks = true;
@@ -288,20 +289,19 @@ public class BlackjackEngine
         player.Hands[player.ActiveHandIndex].Add(newCard);
 
         var handInfo = player.GetHandInfo();
-        // Show all cards in hand, not just the new one
         string allCards = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
-        SendChatMessage($"{playerName} hits: {allCards} -> {handInfo.GetHandDescription()}");
+        SendDealerMessage($"{playerName} hits: {allCards} -> {handInfo.GetHandDescription()}");
         LogAction($"{playerName} hits: {newCard.GetCardDisplay()} -> total {handInfo.Score}");
 
         if (handInfo.IsBust)
         {
-            SendChatMessage($"{playerName} BUSTS with {handInfo.Score}!");
+            SendDealerMessage($"{playerName} BUSTS with {handInfo.Score}!");
             LogAction($"{playerName} busts with {handInfo.Score}");
             AdvanceToNextHandOrPlayer(playerName);
         }
         else if (handInfo.Score == 21)
         {
-            SendChatMessage($"{playerName} reaches 21!");
+            SendDealerMessage($"{playerName} reaches 21!");
             LogAction($"{playerName} reaches 21");
             AdvanceToNextHandOrPlayer(playerName);
         }
@@ -316,7 +316,7 @@ public class BlackjackEngine
         if (player == null) return;
 
         var handInfo = player.GetHandInfo();
-        SendChatMessage($"{playerName} stands with {handInfo.GetHandDescription()}");
+        SendDealerMessage($"{playerName} stands with {handInfo.GetHandDescription()}");
         LogAction($"{playerName} stands with {handInfo.Score}");
 
         AdvanceToNextHandOrPlayer(playerName);
@@ -338,14 +338,13 @@ public class BlackjackEngine
         player.Hands[player.ActiveHandIndex].Add(newCard);
 
         var handInfo = player.GetHandInfo();
-        // Show all cards in hand for double down too
         string allCards = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
-        SendChatMessage($"{playerName} doubles down: {allCards} -> {handInfo.GetHandDescription()}");
+        SendDealerMessage($"{playerName} doubles down: {allCards} -> {handInfo.GetHandDescription()}");
         LogAction($"{playerName} doubled down: {newCard.GetCardDisplay()} -> total {handInfo.Score}");
 
         if (handInfo.IsBust)
         {
-            SendChatMessage($"{playerName} BUSTS after doubling with {handInfo.Score}!");
+            SendDealerMessage($"{playerName} BUSTS after doubling with {handInfo.Score}!");
             LogAction($"{playerName} busts after doubling with {handInfo.Score}");
         }
 
@@ -442,9 +441,10 @@ public class BlackjackEngine
         }
         else
         {
-            // Player finished all hands
+            // Player finished all hands — only announce if they split
             player.IsStanding = true;
-            SendDealerMessage($"{playerName} finished playing all hands");
+            if (player.Hands.Count > 1)
+                SendDealerMessage($"{playerName} finished playing all hands");
             AdvanceToNextTurn(playerName);
         }
     }
@@ -538,141 +538,90 @@ public class BlackjackEngine
         int dealerScore = CurrentTable.GetDealerScore();
         bool dealerBust = dealerScore > 21;
 
-        // Queue the results header first
         SendDealerMessage("FINAL RESULTS");
         LogAction("Round ended - calculating results");
 
-        // Queue all individual player results with delays
         foreach (var player in CurrentTable.Players.Values)
         {
-            if (player.IsAfk || player.Hands.Count == 0) 
-            {
-                SendDealerMessage($"{player.Name}: Did not play this round");
-                continue;
-            }
+            if (player.IsAfk || player.Hands.Count == 0) continue;
 
-            // Track bank progression properly for display
-            int currentDisplayBank = player.PreDealBank; // Start with pre-deal bank
+            // Resolve all hands and collect results BEFORE sending anything
+            var handResults = new List<string>();
+            int bankBefore = player.PreDealBank; // bank before bets were deducted at deal
 
             for (int handIndex = 0; handIndex < player.Hands.Count; handIndex++)
             {
                 var handInfo = player.GetHandInfo(handIndex);
                 int bet = player.CurrentBets[handIndex];
-                string result = "PUSH";
+                string result;
                 int winAmount = 0;
-                int totalPayout = 0;
-
-                // Bank before this specific hand's payout (after bet was already deducted)
-                int bankBeforeThisHandPayout = player.Bank;
 
                 if (handInfo.IsBust)
                 {
                     result = "BUST";
-                    winAmount = 0;
-                    totalPayout = 0;
                 }
                 else if (handInfo.IsBlackjack && CurrentTable.DealerHasBlackjack)
                 {
                     result = "PUSH";
-                    totalPayout = bet; // Return original bet
-                    winAmount = 0;
-                    player.Bank += totalPayout;
+                    player.Bank += bet;
                 }
                 else if (handInfo.IsBlackjack)
                 {
                     result = "BLACKJACK";
-                    winAmount = (int)(bet * 1.5); // 3:2 payout
-                    totalPayout = bet + winAmount;
-                    player.Bank += totalPayout;
+                    winAmount = (int)(bet * 1.5);
+                    player.Bank += bet + winAmount;
                 }
                 else if (CurrentTable.DealerHasBlackjack)
                 {
                     result = "LOSE";
-                    winAmount = 0;
-                    totalPayout = 0;
                 }
-                else if (dealerBust)
+                else if (dealerBust || handInfo.Score > dealerScore)
                 {
                     result = "WIN";
-                    winAmount = bet; // 1:1 payout
-                    totalPayout = bet + winAmount;
-                    player.Bank += totalPayout;
-                }
-                else if (handInfo.Score > dealerScore)
-                {
-                    result = "WIN";
-                    winAmount = bet; // 1:1 payout
-                    totalPayout = bet + winAmount;
-                    player.Bank += totalPayout;
+                    winAmount = bet;
+                    player.Bank += bet + winAmount;
                 }
                 else if (handInfo.Score == dealerScore)
                 {
                     result = "PUSH";
-                    totalPayout = bet; // Return original bet
-                    winAmount = 0;
-                    player.Bank += totalPayout;
+                    player.Bank += bet;
                 }
                 else
                 {
                     result = "LOSE";
-                    winAmount = 0;
-                    totalPayout = 0;
                 }
 
-                // Bank after this hand's payout
-                int bankAfterThisHand = player.Bank;
-
-                // Record bet result
                 player.AddBetResult(new Models.BetResult
                 {
                     BetAmount = bet,
                     Result = result,
                     AmountWon = winAmount,
-                    AmountLost = result.Contains("LOSE") || result == "BUST" ? bet : 0,
+                    AmountLost = result is "LOSE" or "BUST" ? bet : 0,
                     HandDescription = handInfo.GetHandDescription()
                 });
 
-                // Create result message with proper bank progression
-                string handDisplay = player.Hands.Count > 1 ? $" Hand {handIndex + 1}" : "";
-                string resultMessage;
+                string handLabel = player.Hands.Count > 1 ? $"H{handIndex + 1}:" : string.Empty;
 
-                // Calculate what the "before" bank should show for this specific hand
-                int displayBankBefore;
-                if (handIndex == 0)
+                string part = result switch
                 {
-                    // First hand: always show the original pre-deal bank
-                    displayBankBefore = player.PreDealBank;
-                }
-                else
-                {
-                    // Subsequent hands: show the bank after the previous hand
-                    displayBankBefore = currentDisplayBank;
-                }
+                    "BLACKJACK" => $"{handLabel}BLACKJACK +{winAmount}G",
+                    "WIN"       => $"{handLabel}WIN +{winAmount}G",
+                    "PUSH"      => $"{handLabel}PUSH",
+                    "BUST"      => $"{handLabel}BUST -{bet}G",
+                    _           => $"{handLabel}LOSE -{bet}G"
+                };
+                handResults.Add(part);
 
-                if (result == "WIN" || result == "BLACKJACK")
-                {
-                    resultMessage = $"{player.Name}{handDisplay}: {result} - Won {winAmount} | Bank: {displayBankBefore} -> {bankAfterThisHand}";
-                }
-                else if (result == "PUSH")
-                {
-                    resultMessage = $"{player.Name}{handDisplay}: PUSH - Bet returned | Bank: {displayBankBefore} -> {bankAfterThisHand}";
-                }
-                else
-                {
-                    resultMessage = $"{player.Name}{handDisplay}: {result} - Lost {bet} | Bank: {displayBankBefore} -> {bankAfterThisHand}";
-                }
-
-                // Update display bank for next hand
-                currentDisplayBank = bankAfterThisHand;
-
-                // Queue the result message with dealer delay
-                SendDealerMessage(resultMessage);
-
-                LogAction($"{player.Name}{handDisplay}: {result} - bet {bet}, winnings {winAmount}, bank {bankAfterThisHand}");
+                LogAction($"{player.Name} H{handIndex+1}: {result} bet={bet} won={winAmount} bank={player.Bank}");
             }
+
+            // One message per player: all hands + final bank
+            int bankNow = player.Bank;
+            int net = bankNow - bankBefore;
+            string handsStr = string.Join(" | ", handResults);
+            SendDealerMessage($"{player.Name}: {handsStr} | Bank: {bankNow}G");
         }
 
-        // No "round complete" message - just reset to lobby
         CurrentTable.GameState = Models.GameState.Lobby;
         LogAction("Round complete - reset to lobby");
         OnUIUpdate?.Invoke();
@@ -710,9 +659,12 @@ public class BlackjackEngine
         if (!CurrentTable.Players.ContainsKey(nameUpper))
         {
             var player = new Models.Player(name, server);
-            player.PersistentBet = CurrentTable.MinBet; // Set to minimum table bet
+            player.PersistentBet = CurrentTable.MinBet;
             CurrentTable.Players.Add(nameUpper, player);
             LogAction($"Player added: {name} with bet {CurrentTable.MinBet}");
+
+            if (CurrentTable.AnnounceNewPlayers)
+                SendChatMessage($"{name} has been added to the table.");
         }
     }
 
@@ -851,6 +803,7 @@ public class BlackjackEngine
         {
             player.IsAfk = !player.IsAfk;
             LogAction($"Toggled {name} AFK to {player.IsAfk}");
+            SendChatMessage(player.IsAfk ? $"{name} is now AFK." : $"{name} is back.");
         }
     }
 

@@ -16,7 +16,6 @@ public class RouletteEngine
 
     private Queue<string> MessageQueue { get; set; } = new();
     private DateTime LastMessage { get; set; } = DateTime.MinValue;
-    private const int MessageDelayMs = 3400;
 
     private static readonly Random Rng = new();
 
@@ -31,6 +30,7 @@ public class RouletteEngine
     {
         string chatCommand = ChatMode == Models.ChatMode.Party ? $"/party {message}" : $"/say {message}";
         OnChatMessage?.Invoke(chatCommand);
+        LastMessage = DateTime.Now; // keep queue in sync
     }
 
     private void QueueMessage(string message) => MessageQueue.Enqueue(message);
@@ -38,7 +38,7 @@ public class RouletteEngine
     public void ProcessMessageQueue()
     {
         if (MessageQueue.Count > 0 &&
-            (DateTime.Now - LastMessage).TotalMilliseconds >= MessageDelayMs)
+            (DateTime.Now - LastMessage).TotalMilliseconds >= CurrentTable.MessageDelayMs)
         {
             SendMessage(MessageQueue.Dequeue());
             LastMessage = DateTime.Now;
@@ -97,7 +97,8 @@ public class RouletteEngine
         string color = GetColor(result);
         string colorLabel = color == "GREEN" ? "🟢" : color == "RED" ? "🔴" : "⚫";
 
-        SendMessage($"The ball lands on: {colorLabel} {result} {color}!");
+        // Queue the result so payouts are naturally separated by MessageDelayMs
+        QueueMessage($"The ball lands on: {colorLabel} {result} {color}!");
         LogAction($"Roulette result: {result} ({color})");
 
         var resultLines = new List<string>();
@@ -117,10 +118,7 @@ public class RouletteEngine
                     int mult = bet.Type == "INSIDE" ? 36 : 2;
                     betBreakdowns.Add($"{bet.Amount}G\u00d7{bet.Target}(\u00d7{mult})={payout}G");
                 }
-                else
-                {
-                    betBreakdowns.Add($"{bet.Amount}G\u00d7{bet.Target}=MISS");
-                }
+                // misses are not reported
             }
 
             int totalRisked = player.RouletteBets.Sum(b => b.Amount);
@@ -132,6 +130,7 @@ public class RouletteEngine
             if (won > 0)
                 player.Bank += won;
 
+            player.RouletteNetGains += net;
             int bankNow = player.Bank;
 
             resultLines.Add($"Payouts | {player.Name}: {breakdown} | net {netStr} | Bank: {bankStart}G \u2192 {bankNow}G");
@@ -178,7 +177,7 @@ public class RouletteEngine
 
         var outsideTargets = rawTargets.Where(t => t == "RED" || t == "BLACK" || t == "EVEN" || t == "ODD").ToList();
         var insideTargets = rawTargets
-            .Where(t => int.TryParse(t, out int n) && n >= 0 && n <= 36)
+            .Where(t => int.TryParse(t, out int n) && n >= 0 && n <= 36 && t.TrimStart('0').Length <= t.Length && !(t.Length > 1 && t.All(c => c == '0')))
             .ToList();
 
         if (outsideTargets.Count == 0 && insideTargets.Count == 0)

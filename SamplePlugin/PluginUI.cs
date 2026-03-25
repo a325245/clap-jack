@@ -305,15 +305,15 @@ namespace SamplePlugin
 
             if (table.RouletteSpinState == Models.RouletteSpinState.Spinning)
             {
-                double ms    = (DateTime.Now - table.RouletteSpinStart).TotalMilliseconds;
-                // Speed eases from fast → slow over 4 seconds
-                double speed = Math.Max(0.04, 0.9 - (ms / 4000.0) * 0.86);
+                double ms = Math.Min((DateTime.Now - table.RouletteSpinStart).TotalMilliseconds, 4000.0);
 
-                // Wheel rotates clockwise (+)
-                wheelRotation = (float)(ms * speed * 0.018) % TwoPI;
+                // Integrate angular velocity over time so rotation never reverses.
+                // speed(t) = 0.9 - 0.86*t/4000  →  ∫speed dt = 0.9t - 0.43t²/4000
+                double totalAngle = 0.9 * ms - 0.43 * ms * ms / 4000.0;
 
-                // Needle rotates counter-clockwise (-) at ~1.4x wheel speed
-                needleAngle = -(float)(ms * speed * 0.025) % TwoPI;
+                // Wheel rotates clockwise (+), needle counter-clockwise (-)
+                wheelRotation = (float)(totalAngle * 0.018) % TwoPI;
+                needleAngle   = -(float)(totalAngle * 0.025) % TwoPI;
             }
             else if (table.RouletteResult.HasValue)
             {
@@ -376,7 +376,7 @@ namespace SamplePlugin
             }
             else if (table.RouletteSpinState == Models.RouletteSpinState.Spinning)
             {
-                ImGui.TextColored(new Vector4(1,1,0,1), "🎡 Spinning...");
+                ImGui.TextColored(new Vector4(1,1,0,1), "Spinning...");
             }
             else
             {
@@ -729,9 +729,16 @@ namespace SamplePlugin
                 ImGui.TableSetupColumn("💰 Bank", ImGuiTableColumnFlags.WidthFixed, 80);
                 ImGui.TableSetupColumn("🎰 Bet", ImGuiTableColumnFlags.WidthFixed, 70);
                 ImGui.TableSetupColumn("💤 AFK", ImGuiTableColumnFlags.WidthFixed, 50);
-                ImGui.TableSetupColumn("📊 Stats", ImGuiTableColumnFlags.WidthFixed, 100);
-                ImGui.TableSetupColumn("🎴 Cards", ImGuiTableColumnFlags.WidthFixed, 300);
-                ImGui.TableSetupColumn("🔧 Actions", ImGuiTableColumnFlags.WidthFixed, 120);
+
+                bool isRoulette = engine.CurrentTable.GameType == Models.GameType.Roulette;
+                if (isRoulette)
+                    ImGui.TableSetupColumn("📊 R.Stats", ImGuiTableColumnFlags.WidthFixed, 100);
+                else
+                    ImGui.TableSetupColumn("📊 Stats", ImGuiTableColumnFlags.WidthFixed, 100);
+
+                if (!isRoulette)
+                    ImGui.TableSetupColumn("🎴 Cards", ImGuiTableColumnFlags.WidthFixed, 300);
+                ImGui.TableSetupColumn("🔧 Actions", ImGuiTableColumnFlags.WidthFixed, 160);
                 ImGui.TableHeadersRow();
 
                 var players = engine.CurrentTable.Players.Values.ToList();
@@ -876,17 +883,23 @@ namespace SamplePlugin
                     ImGui.TableSetColumnIndex(4);
                     bool isAfk = player.IsAfk;
                     if (ImGui.Checkbox($"##afk{i}", ref isAfk))
-                    {
-                        player.IsAfk = isAfk;
-                    }
+                        engine.ToggleAFK(player.Name);
 
-                    // Stats Column - LIVE UPDATING
+                    // Stats Column
                     ImGui.TableSetColumnIndex(5);
-                    if (player.GamesPlayed > 0)
+                    if (isRoulette)
+                    {
+                        int net = player.RouletteNetGains;
+                        Vector4 netColor = net > 0 ? new Vector4(0, 1, 0, 1f) :
+                                           net < 0 ? new Vector4(1, 0.4f, 0.4f, 1f) :
+                                                     new Vector4(0.7f, 0.7f, 0.7f, 1f);
+                        ImGui.TextColored(netColor, net >= 0 ? $"+{net}G" : $"{net}G");
+                    }
+                    else if (player.GamesPlayed > 0)
                     {
                         float winRate = (float)player.GetWinPercentage();
-                        Vector4 statsColor = winRate > 60f ? new Vector4(0, 1, 0, 1f) : 
-                                            winRate > 40f ? new Vector4(1, 1, 0, 1f) : 
+                        Vector4 statsColor = winRate > 60f ? new Vector4(0, 1, 0, 1f) :
+                                            winRate > 40f ? new Vector4(1, 1, 0, 1f) :
                                             new Vector4(1, 0.5f, 0.5f, 1f);
                         ImGui.TextColored(statsColor, $"{player.GamesWon}/{player.GamesPlayed}");
                         ImGui.TextColored(statsColor, $"({winRate:F0}%)");
@@ -896,8 +909,10 @@ namespace SamplePlugin
                         ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "No games");
                     }
 
-                    // Cards Column - LIVE UPDATING with PNG Images
-                    ImGui.TableSetColumnIndex(6);
+                    // Cards Column — hidden in roulette mode
+                    if (!isRoulette)
+                    {
+                        ImGui.TableSetColumnIndex(6);
                     if (player.Hands.Count > 0)
                     {
                         for (int handIndex = 0; handIndex < player.Hands.Count; handIndex++)
@@ -991,13 +1006,13 @@ namespace SamplePlugin
                         }
                         ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), "Cards");
                     }
+                    } // end !isRoulette cards block
 
-                    // Actions Column
-                    ImGui.TableSetColumnIndex(7);
+                    // Actions Column — index shifts by 1 when cards column is hidden
+                    ImGui.TableSetColumnIndex(isRoulette ? 6 : 7);
                     if (ImGui.Button($"Kick##kick{i}", new Vector2(50, 0)))
                     {
                         engine.RemovePlayer(player.Name);
-                        // Clean up editing dictionaries
                         editingName.Remove(playerKey);
                         editingServer.Remove(playerKey);
                         editingBank.Remove(playerKey);
@@ -1006,12 +1021,16 @@ namespace SamplePlugin
                     ImGui.SameLine();
                     if (ImGui.Button($"DM##dm{i}", new Vector2(40, 0)))
                     {
-                        // Send bank and bet info via DM
                         string betInfo = player.PersistentBet > 0 ? $"Bet: {player.PersistentBet}" : "No bet placed";
-                        engine.OnPlayerTell?.Invoke($"{player.Name}@{player.Server}", 
-                            $"Bank: {player.Bank} | {betInfo}");
+                        int bjNet = player.TotalWinnings;
+                        int rNet = player.RouletteNetGains;
+                        string netInfo = $"BJ net: {(bjNet >= 0 ? "+" : "")}{bjNet}G | R net: {(rNet >= 0 ? "+" : "")}{rNet}G";
+                        engine.OnPlayerTell?.Invoke($"{player.Name}@{player.Server}", $"Bank: {player.Bank} | {betInfo} | {netInfo}");
                     }
-                }
+                    ImGui.SameLine();
+                    if (ImGui.Button($"{(player.IsAfk ? "[AFK]" : "AFK")}##afkbtn{i}", new Vector2(38, 0)))
+                        engine.ToggleAFK(player.Name);
+                }  // end player loop
 
                 ImGui.EndTable();
             }
@@ -1026,11 +1045,25 @@ namespace SamplePlugin
             string adminNameTemp = AdminName;
             ImGui.SetNextItemWidth(200);
             if (ImGui.InputText("##adminName", ref adminNameTemp, 100))
-            {
                 AdminName = adminNameTemp;
-            }
             ImGui.SameLine();
             ImGui.Text($"Current: {(string.IsNullOrEmpty(AdminName) ? "None" : AdminName)}");
+
+            ImGui.Separator();
+
+            // Message delay slider
+            ImGui.TextColored(new Vector4(0.5f, 1, 1, 1), "MESSAGE QUEUE DELAY");
+            ImGui.SetNextItemWidth(280);
+            int delayMs = engine.CurrentTable.MessageDelayMs;
+            if (ImGui.SliderInt("ms##msgdelay", ref delayMs, 1000, 6000))
+                engine.CurrentTable.MessageDelayMs = delayMs;
+            ImGui.SameLine();
+            ImGui.Text($"({delayMs / 1000.0:F1}s)");
+
+            // Announce new players toggle
+            bool announce = engine.CurrentTable.AnnounceNewPlayers;
+            if (ImGui.Checkbox("Announce when players are added to table", ref announce))
+                engine.CurrentTable.AnnounceNewPlayers = announce;
 
             ImGui.Separator();
 
@@ -1039,14 +1072,10 @@ namespace SamplePlugin
             ImGui.Text($"Current Mode: {engine.Mode}");
 
             if (ImGui.Button("Set Auto Mode", new Vector2(120, 0)))
-            {
                 engine.Mode = DealerMode.Auto;
-            }
             ImGui.SameLine();
             if (ImGui.Button("Set Manual Mode", new Vector2(120, 0)))
-            {
                 engine.Mode = DealerMode.Manual;
-            }
 
             ImGui.Separator();
 
@@ -1649,8 +1678,16 @@ namespace SamplePlugin
                         ImGui.Separator();
                         ImGui.TextColored(new Vector4(1, 1, 0.5f, 1f), player.Name);
 
-                        ImGui.Text($"Bank: {player.Bank} | Total Winnings: {player.TotalWinnings}");
-                        ImGui.Text($"Games: {player.GamesPlayed} | Won: {player.GamesWon} | Win Rate: {player.GetWinPercentage():F1}%");
+                        // BJ stats
+                        ImGui.Text($"Bank: {player.Bank} | BJ Winnings: {player.TotalWinnings}");
+                        ImGui.Text($"BJ Games: {player.GamesPlayed} | Won: {player.GamesWon} | Win Rate: {player.GetWinPercentage():F1}%");
+
+                        // Roulette net gains
+                        int rouNet = player.RouletteNetGains;
+                        Vector4 rouColor = rouNet > 0 ? new Vector4(0, 1, 0, 1f) :
+                                           rouNet < 0 ? new Vector4(1, 0.4f, 0.4f, 1f) :
+                                                        new Vector4(0.6f, 0.6f, 0.6f, 1f);
+                        ImGui.TextColored(rouColor, $"Roulette Net: {(rouNet >= 0 ? "+" : "")}{rouNet}G");
 
                         // Win rate progress bar
                         if (player.GamesPlayed > 0)
