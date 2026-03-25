@@ -11,9 +11,9 @@
         "DalamudApiLevel": 14,
         "DownloadCount": 0,
         "LastUpdate": "1735080000",
-        "DownloadLinkInstall": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/SamplePlugin.zip",
-        "DownloadLinkTesting": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/SamplePlugin.zip",
-        "DownloadLinkUpdate": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/SamplePlugin.zip",
+        "DownloadLinkInstall": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/plugin.zip",
+        "DownloadLinkTesting": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/plugin.zip",
+        "DownloadLinkUpdate": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/plugin.zip",
         "IconUrl": "",
         "Tags": [
             "blackjack",
