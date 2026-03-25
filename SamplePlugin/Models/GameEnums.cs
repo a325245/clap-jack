@@ -28,7 +28,9 @@ public enum ChatMode
 public enum GameType
 {
     Blackjack,
-    Roulette
+    Roulette,
+    Craps,
+    Baccarat
 }
 
 public enum RouletteSpinState
@@ -36,4 +38,17 @@ public enum RouletteSpinState
     Idle,
     Spinning,
     Resolving
+}
+
+public enum CrapsPhase
+{
+    WaitingForBets,
+    PointEstablished
+}
+
+public enum BaccaratPhase
+{
+    WaitingForBets,
+    Dealing,
+    Resolved
 }

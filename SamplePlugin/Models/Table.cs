@@ -16,9 +16,13 @@ public class Table
     public int TurnTimeRemaining { get; set; } = 0;
     public DateTime TurnStartTime { get; set; } = DateTime.Now;
     public bool TimerWarningShown { get; set; } = false;
+    public bool TimerTimeoutShown { get; set; } = false;  // prevents manual-mode timeout spam
     public int MinBet { get; set; } = 10;
     public int MaxBet { get; set; } = 1000;
     public int TurnTimeLimit { get; set; } = 60;
+    public int MaxSplitsAllowed { get; set; } = 2;        // 0 = no splits, up to 4
+    public bool PersistentDeck { get; set; } = false;
+    public List<Card> DealtCards { get; set; } = new();   // cards dealt from persistent deck
 
     public GameState GameState { get; set; } = GameState.Lobby;
     public GameType GameType { get; set; } = GameType.Blackjack;
@@ -33,6 +37,24 @@ public class Table
     public int? RouletteResult { get; set; } = null;
     public RouletteSpinState RouletteSpinState { get; set; } = RouletteSpinState.Idle;
     public DateTime RouletteSpinStart { get; set; }
+
+    // Craps
+    public CrapsPhase CrapsPhase { get; set; } = CrapsPhase.WaitingForBets;
+    public int CrapsPoint { get; set; } = 0;
+    public int CrapsDie1 { get; set; } = 1;
+    public int CrapsDie2 { get; set; } = 1;
+    public bool CrapsRolling { get; set; } = false;
+    public DateTime CrapsRollStart { get; set; }
+    public Dictionary<string, CrapsPlayerBets> CrapsBets { get; set; } = new();
+    public string   CrapsShooterName  { get; set; } = string.Empty;
+    public bool     CrapsBettingPhase { get; set; } = false;
+    public DateTime CrapsBettingStart { get; set; }
+
+    // Baccarat
+    public BaccaratPhase BaccaratPhase { get; set; } = BaccaratPhase.WaitingForBets;
+    public List<Card> BaccaratPlayerHand { get; set; } = new();
+    public List<Card> BaccaratBankerHand { get; set; } = new();
+    public Dictionary<string, BaccaratBet> BaccaratBets { get; set; } = new();
 
     // Dealer rules and properties
     public DealerRules DealerRules { get; set; } = DealerRules.HitsOnSoft17;
@@ -90,6 +112,7 @@ public class Table
         var card = Deck[0];
         Deck.RemoveAt(0);
         TotalCardsDealt++;
+        if (PersistentDeck) DealtCards.Add(card);
         return card;
     }
 

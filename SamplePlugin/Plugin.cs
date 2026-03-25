@@ -36,6 +36,8 @@ namespace SamplePlugin
 
         public BlackjackEngine Engine { get; init; }
         public RouletteEngine RouletteEngine { get; init; }
+        public CrapsEngine CrapsEngine { get; init; }
+        public BaccaratEngine BaccaratEngine { get; init; }
         public CommandParser CommandParser { get; init; }
         public ChatHandler ChatHandler { get; init; }
         public PluginUI UI { get; init; }
@@ -67,13 +69,25 @@ namespace SamplePlugin
 
             Engine = new BlackjackEngine();
             RouletteEngine = new RouletteEngine(Engine.CurrentTable);
-            CommandParser = new CommandParser(Engine, RouletteEngine);
+            CrapsEngine = new CrapsEngine(Engine.CurrentTable);
+            BaccaratEngine = new BaccaratEngine(Engine.CurrentTable);
+            CommandParser = new CommandParser(Engine, RouletteEngine, CrapsEngine, BaccaratEngine);
             ChatHandler = new ChatHandler();
 
             // Wire up roulette events (reuse same send helpers)
             RouletteEngine.OnChatMessage += SendGameMessage;
             RouletteEngine.OnPlayerTell += SendPlayerTell;
             RouletteEngine.OnUIUpdate += () => { };
+
+            // Wire up craps events
+            CrapsEngine.OnChatMessage += SendGameMessage;
+            CrapsEngine.OnPlayerTell += SendPlayerTell;
+            CrapsEngine.OnUIUpdate += () => { };
+
+            // Wire up baccarat events
+            BaccaratEngine.OnChatMessage += SendGameMessage;
+            BaccaratEngine.OnPlayerTell += SendPlayerTell;
+            BaccaratEngine.OnUIUpdate += () => { };
 
             // Wire up callbacks
             Engine.OnChatMessage += SendGameMessage;
@@ -261,6 +275,14 @@ namespace SamplePlugin
             // Process roulette spin state machine (4-second delay then resolve)
             RouletteEngine.ProcessSpin();
             RouletteEngine.ProcessMessageQueue();
+
+            // Process craps dice roll animation and betting timer
+            CrapsEngine.ProcessRoll();
+            CrapsEngine.ProcessBettingTimer();
+            CrapsEngine.ProcessMessageQueue();
+
+            // Process baccarat message queue
+            BaccaratEngine.ProcessMessageQueue();
 
             ProcessMessageQueue();
             UI.Draw();

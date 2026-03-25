@@ -59,6 +59,8 @@ public class BlackjackEngine
         SendDealerChatMessage(message);
     }
 
+    public void Announce(string message) => SendDealerChatMessage(message);
+
     public void StartGame()
     {
         if (CurrentTable.GameState == Models.GameState.Playing) return; // prevent double-deal
@@ -86,13 +88,20 @@ public class BlackjackEngine
             player.HasInsurance = false;
             player.InsuranceBet = 0;
             player.ActiveHandIndex = 0;
-            player.PreDealBank = player.Bank; // Capture bank before any bets are deducted
+            player.MaxSplits = CurrentTable.MaxSplitsAllowed;
+            player.PreDealBank = player.Bank;
         }
 
         // Build turn order and set up hands
         CurrentTable.TurnOrder = validPlayers.Select(p => p.Name.ToUpper()).ToList();
         CurrentTable.CurrentTurnIndex = 0;
-        CurrentTable.BuildDeck();
+        if (!CurrentTable.PersistentDeck)
+            CurrentTable.BuildDeck();
+        else if (CurrentTable.Deck.Count < 10)
+        {
+            CurrentTable.BuildDeck(); // reshuffle if running low
+            CurrentTable.DealtCards.Clear();
+        }
         CurrentTable.DealerHand.Clear();
         CurrentTable.HoleCardRevealed = false;
         CurrentTable.TotalGames++;
@@ -271,8 +280,13 @@ public class BlackjackEngine
                 }
                 else
                 {
-                    // Manual mode - just warn admin
-                    OnAdminEcho?.Invoke($"{playerName} time limit exceeded!");
+                    // Manual mode — announce once in /say that time is up
+                    if (!CurrentTable.TimerTimeoutShown)
+                    {
+                        CurrentTable.TimerTimeoutShown = true;
+                        SendDealerMessage($"{playerName}'s time is up. No commands needed — dealer controls the game.");
+                        LogAction($"{playerName} time limit exceeded (manual mode)");
+                    }
                 }
             }
         }
@@ -420,9 +434,11 @@ public class BlackjackEngine
         if (player.ActiveHandIndex + 1 < player.Hands.Count)
         {
             player.ActiveHandIndex++;
+            player.HasDoubledDown = false; // reset per-hand flag
             CurrentTable.TurnTimeRemaining = CurrentTable.TurnTimeLimit;
             CurrentTable.TurnStartTime = DateTime.Now;
-            CurrentTable.TimerWarningShown = false; // Reset warning flag
+            CurrentTable.TimerWarningShown = false;
+            CurrentTable.TimerTimeoutShown = false;
 
             // Announce the next hand with cards
             var handInfo = player.GetHandInfo();
@@ -458,6 +474,8 @@ public class BlackjackEngine
     private void AdvanceToNextTurn(string playerName)
     {
         CurrentTable.CurrentTurnIndex++;
+        CurrentTable.TimerWarningShown = false;
+        CurrentTable.TimerTimeoutShown = false;
 
         if (CurrentTable.CurrentTurnIndex >= CurrentTable.TurnOrder.Count)
         {

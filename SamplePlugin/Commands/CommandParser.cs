@@ -11,15 +11,20 @@ public class CommandParser
 {
     private BlackjackEngine engine;
     private RouletteEngine rouletteEngine;
+    private CrapsEngine crapsEngine;
+    private BaccaratEngine baccaratEngine;
 
     public Action<string>? OnChatMessage { get; set; }
     public Action<string, string>? OnPlayerTell { get; set; }
     public Action<string>? OnAdminEcho { get; set; }
 
-    public CommandParser(BlackjackEngine engine, RouletteEngine rouletteEngine)
+    public CommandParser(BlackjackEngine engine, RouletteEngine rouletteEngine,
+                         CrapsEngine crapsEngine, BaccaratEngine baccaratEngine)
     {
         this.engine = engine;
         this.rouletteEngine = rouletteEngine;
+        this.crapsEngine = crapsEngine;
+        this.baccaratEngine = baccaratEngine;
     }
 
     public void Parse(string senderName, string text, string adminName, DealerMode mode, ChatChannel sourceChannel)
@@ -43,7 +48,8 @@ public class CommandParser
 
     private void SendResponse(string message, ChatChannel channel)
     {
-        string cmd = channel == ChatChannel.Party ? $"/party {message}" : $"/say {message}";
+        // Always reply in the dealer's configured chat mode, not the player's incoming channel
+        string cmd = engine.ChatMode == Models.ChatMode.Party ? $"/party {message}" : $"/say {message}";
         OnChatMessage?.Invoke(cmd);
     }
 
@@ -51,6 +57,44 @@ public class CommandParser
 
     private void HandlePlayerCommand(string playerName, string command, string[] parts, DealerMode mode, ChatChannel sourceChannel)
     {
+        // ── Craps: > BET <TYPE> [num] <amt> ──────────────────────────────────
+        if (command == "BET" && parts.Length >= 3 &&
+            engine.CurrentTable.GameType == GameType.Craps)
+        {
+            string crapsType = parts[1].ToUpperInvariant();
+            // PLACE bet: > BET PLACE <number> <amount>
+            if (crapsType == "PLACE" && parts.Length >= 4 &&
+                int.TryParse(parts[2], out int placeNum) &&
+                int.TryParse(parts[3], out int placeAmt))
+            {
+                if (!crapsEngine.PlaceBet(playerName, "PLACE", placeAmt, out string placeErr, placeNum))
+                    SendResponse(placeErr, sourceChannel);
+                return;
+            }
+            // Standard bets: > BET PASS/DONTPASS/FIELD/BIG6/BIG8 <amount>
+            if (crapsType is "PASS" or "DONTPASS" or "FIELD" or "BIG6" or "BIG8" &&
+                int.TryParse(parts[2], out int crapsAmt))
+            {
+                if (!crapsEngine.PlaceBet(playerName, crapsType, crapsAmt, out string crapsErr))
+                    SendResponse(crapsErr, sourceChannel);
+                return;
+            }
+        }
+
+        // ── Baccarat: > BET PLAYER/BANKER/TIE [amt] ──────────────────────────
+        if (command == "BET" && parts.Length >= 3 &&
+            engine.CurrentTable.GameType == GameType.Baccarat)
+        {
+            string bacType = parts[1].ToUpperInvariant();
+            if ((bacType == "PLAYER" || bacType == "BANKER" || bacType == "TIE") &&
+                int.TryParse(parts[2], out int bacAmt))
+            {
+                if (!baccaratEngine.PlaceBet(playerName, bacType, bacAmt, out string bacErr))
+                    SendResponse(bacErr, sourceChannel);
+                return;
+            }
+        }
+
         // ── Roulette: > BET [amt] ON [targets] ────────────────────────────────
         if (command == "BET" && parts.Length >= 4 && parts[1].ToUpperInvariant() == "ON" == false)
         {
@@ -112,28 +156,28 @@ public class CommandParser
 
             case "HIT":
                 if (mode == DealerMode.Manual)
-                    OnPlayerTell?.Invoke($"{playerName}@Local", "Table is in Manual Mode.");
+                    SendResponse("No commands needed \u2014 the dealer will control the game.", sourceChannel);
                 else if (engine.CurrentTable.GameState == Models.GameState.Playing)
                     engine.PlayerHit(playerName);
                 break;
 
             case "STAND":
                 if (mode == DealerMode.Manual)
-                    OnPlayerTell?.Invoke($"{playerName}@Local", "Table is in Manual Mode.");
+                    SendResponse("No commands needed \u2014 the dealer will control the game.", sourceChannel);
                 else if (engine.CurrentTable.GameState == Models.GameState.Playing)
                     engine.PlayerStand(playerName);
                 break;
 
             case "DOUBLE":
                 if (mode == DealerMode.Manual)
-                    OnPlayerTell?.Invoke($"{playerName}@Local", "Table is in Manual Mode.");
+                    SendResponse("No commands needed \u2014 the dealer will control the game.", sourceChannel);
                 else if (engine.CurrentTable.GameState == Models.GameState.Playing)
                     engine.PlayerDouble(playerName);
                 break;
 
             case "SPLIT":
                 if (mode == DealerMode.Manual)
-                    OnPlayerTell?.Invoke($"{playerName}@Local", "Table is in Manual Mode.");
+                    SendResponse("No commands needed \u2014 the dealer will control the game.", sourceChannel);
                 else if (engine.CurrentTable.GameState == Models.GameState.Playing)
                     engine.PlayerSplit(playerName);
                 break;
@@ -142,6 +186,24 @@ public class CommandParser
                 if (engine.CurrentTable.GameState == Models.GameState.Playing)
                     engine.PlayerInsurance(playerName);
                 break;
+
+            case "ROLL":
+                if (engine.CurrentTable.GameType == GameType.Craps)
+                {
+                    if (crapsEngine.IsCurrentShooter(playerName))
+                    {
+                        if (!crapsEngine.StartRoll(out string rollErr))
+                            SendResponse(rollErr, sourceChannel);
+                    }
+                    else
+                    {
+                        string shooter = engine.CurrentTable.CrapsShooterName;
+                        SendResponse(string.IsNullOrEmpty(shooter)
+                            ? "No active shooter — wait for bets to open."
+                            : $"Only {shooter} can roll right now.", sourceChannel);
+                    }
+                }
+                break;
         }
     }
 
@@ -149,6 +211,22 @@ public class CommandParser
 
     private void HandleAdminCommand(string admin, string command, string[] parts, DealerMode mode, ChatChannel sourceChannel)
     {
+        // ── Craps admin: > ROLL ───────────────────────────────────────────────
+        if (command == "ROLL" && engine.CurrentTable.GameType == GameType.Craps)
+        {
+            if (!crapsEngine.StartRoll(out string err))
+                SendResponse(err, sourceChannel);
+            return;
+        }
+
+        // ── Baccarat admin: > DEAL ────────────────────────────────────────────
+        if (command == "DEAL" && engine.CurrentTable.GameType == GameType.Baccarat)
+        {
+            if (!baccaratEngine.Deal(out string err))
+                SendResponse(err, sourceChannel);
+            return;
+        }
+
         // ── Roulette admin: > SPIN ─────────────────────────────────────────────
         if (command == "SPIN" && engine.CurrentTable.GameType == GameType.Roulette)
         {
@@ -190,7 +268,15 @@ public class CommandParser
         }
     }
 
-    private string GetRulesText(Table table) =>
-        $"Min Bet: {table.MinBet}, Max Bet: {table.MaxBet}. BJ: >HIT >STAND >DOUBLE >SPLIT >INSURANCE >BET [amt]. Roulette: >BET [amt] ON [targets] >BANK >AFK >HELP";
+    private string GetRulesText(Table table)
+    {
+        return table.GameType switch
+        {
+            GameType.Craps    => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Shooter: >ROLL | Come-out: >BET PASS [amt]  >BET DONTPASS [amt] | After point: >BET FIELD [amt]  >BET BIG6 [amt]  >BET BIG8 [amt]  >BET PLACE [4/5/6/8/9/10] [amt] | 7/11=Natural, 2/3=Craps, 12=Push.",
+            GameType.Baccarat => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Baccarat: >BET PLAYER [amt]  >BET BANKER [amt]  >BET TIE [amt] | Admin: >DEAL | Closest to 9 wins. Player 1:1, Banker 1:1, Tie 8:1.",
+            GameType.Roulette => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Roulette: >BET [amt] ON [targets] | Admin: >SPIN | Targets: RED BLACK EVEN ODD 0-36.",
+            _                 => $"Min: {table.MinBet}G Max: {table.MaxBet}G | BJ: >HIT >STAND >DOUBLE >SPLIT >INSURANCE >BET [amt] | >BANK >AFK >HELP"
+        };
+    }
 }
 
