@@ -14,7 +14,7 @@
         "DownloadLinkInstall": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/plugin.zip",
         "DownloadLinkTesting": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/plugin.zip",
         "DownloadLinkUpdate": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/plugin.zip",
-         "IconUrl": "https://raw.githubusercontent.com/a325245/clap-jack/refs/heads/master/images/icon.png",
+        "IconUrl": "https://raw.githubusercontent.com/a325245/clap-jack/refs/heads/master/images/icon.png",
         "Tags": [
             "blackjack",
             "games",
