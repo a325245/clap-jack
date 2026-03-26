@@ -5,7 +5,7 @@
         "Punchline": "Play blackjack with your friends in FFXIV!",
         "Description": "A fully-featured blackjack dealer plugin for FFXIV. Commands: /chatjack2 to open the dealer GUI. Players use > commands in /say chat to play. Features real-time chat updates, automatic or manual dealer control, and full game results.",
         "InternalName": "SamplePlugin",
-        "AssemblyVersion": "3.2.0.0",
+        "AssemblyVersion": "3.2.0.1",
         "RepoUrl": "https://github.com/a325245/clap-jack",
         "ApplicableVersion": "any",
         "DalamudApiLevel": 14,
