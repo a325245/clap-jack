@@ -11,7 +11,7 @@
         "DalamudApiLevel": 14,
         "DownloadCount": 0,
         "LastUpdate": "1735080000",
-        "IconURL": "https://github.com/a325245/clap-jack/blob/master/chatjack-icon.png?raw=true",
+        "IconURL": "https://raw.githubusercontent.com/a325245/cla-jack/main/images/chatjack-icon.png",
         "DownloadLinkInstall": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/plugin.zip",
         "DownloadLinkTesting": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/plugin.zip",
         "DownloadLinkUpdate": "https://github.com/a325245/clap-jack/releases/download/v3.2.0/plugin.zip",
