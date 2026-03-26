@@ -478,6 +478,38 @@ public class CrapsEngine
             ? p
             : CurrentTable.Players.Values.FirstOrDefault(v => v.Name.ToUpperInvariant() == key);
 
+    public void ForceStop()
+    {
+        MessageQueue.Clear();
+        QueueMessage("Game force stopped by dealer. All bets refunded.");
+        LogAction("Game force stopped - refunding all bets");
+
+        foreach (var kvp in CurrentTable.CrapsBets)
+        {
+            var bets = kvp.Value;
+            var player = GetPlayerByKey(kvp.Key);
+            if (player == null) continue;
+
+            int refund = bets.PassLineBet + bets.DontPassBet + bets.FieldBet
+                       + bets.Big6Bet + bets.Big8Bet + bets.PlaceBets.Values.Sum();
+            if (refund > 0)
+            {
+                player.Bank += refund;
+                QueueMessage($"{player.Name}: {refund}G refunded \u2192 Bank: {player.Bank}G");
+            }
+        }
+
+        foreach (var b in CurrentTable.CrapsBets.Values)
+        { b.PassLineBet = 0; b.DontPassBet = 0; b.FieldBet = 0; b.Big6Bet = 0; b.Big8Bet = 0; b.PlaceBets.Clear(); }
+
+        CurrentTable.CrapsPhase = CrapsPhase.WaitingForBets;
+        CurrentTable.CrapsPoint = 0;
+        CurrentTable.CrapsRolling = false;
+        CurrentTable.CrapsBettingPhase = false;
+        CurrentTable.GameState = Models.GameState.Lobby;
+        OnUIUpdate?.Invoke();
+    }
+
     private void LogAction(string a) =>
         CurrentTable.GameLog.Add($"[{DateTime.Now:HH:mm:ss}] [CRAPS] {a}");
 }

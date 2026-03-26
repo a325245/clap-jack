@@ -30,7 +30,8 @@ public enum GameType
     Blackjack,
     Roulette,
     Craps,
-    Baccarat
+    Baccarat,
+    ChocoboRacing
 }
 
 public enum RouletteSpinState
@@ -51,4 +52,11 @@ public enum BaccaratPhase
     WaitingForBets,
     Dealing,
     Resolved
+}
+
+public enum ChocoboRacePhase
+{
+    WaitingForBets,
+    Racing,
+    Complete
 }

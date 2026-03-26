@@ -206,30 +206,41 @@ public class BaccaratEngine
             if (player == null) continue;
 
             var lines = new List<string>();
+            int net = 0;
 
-            // Player bet pays 1:1
-            if (bet.PlayerBet > 0 && winner == "PLAYER")
+            // Player bet pays 1:1; pushed on TIE
+            if (bet.PlayerBet > 0)
             {
-                player.Bank += bet.PlayerBet * 2;
-                lines.Add($"Player +{bet.PlayerBet}G");
+                if (winner == "PLAYER")
+                { player.Bank += bet.PlayerBet * 2; net += bet.PlayerBet; lines.Add($"Player +{bet.PlayerBet}G"); }
+                else if (winner == "TIE")
+                { player.Bank += bet.PlayerBet; lines.Add("Player PUSH"); }
+                else
+                { net -= bet.PlayerBet; lines.Add($"Player -{bet.PlayerBet}G"); }
             }
 
-            // Banker bet pays 1:1 (no commission)
-            if (bet.BankerBet > 0 && winner == "BANKER")
+            // Banker bet pays 1:1 (no commission); pushed on TIE
+            if (bet.BankerBet > 0)
             {
-                player.Bank += bet.BankerBet * 2;
-                lines.Add($"Banker +{bet.BankerBet}G");
+                if (winner == "BANKER")
+                { player.Bank += bet.BankerBet * 2; net += bet.BankerBet; lines.Add($"Banker +{bet.BankerBet}G"); }
+                else if (winner == "TIE")
+                { player.Bank += bet.BankerBet; lines.Add("Banker PUSH"); }
+                else
+                { net -= bet.BankerBet; lines.Add($"Banker -{bet.BankerBet}G"); }
             }
 
             // Tie bet pays 8:1
-            if (bet.TieBet > 0 && winner == "TIE")
+            if (bet.TieBet > 0)
             {
-                player.Bank += bet.TieBet * 9; // original + 8x winnings
-                lines.Add($"Tie +{bet.TieBet * 8}G");
+                if (winner == "TIE")
+                { player.Bank += bet.TieBet * 9; net += bet.TieBet * 8; lines.Add($"Tie +{bet.TieBet * 8}G"); }
+                else
+                { net -= bet.TieBet; lines.Add($"Tie -{bet.TieBet}G"); }
             }
 
-            if (lines.Count > 0)
-                QueueMessage($"{player.Name}: {string.Join(" | ", lines)} → Bank: {player.Bank}G");
+            player.BaccaratNetGains += net;
+            QueueMessage($"{player.Name}: {string.Join(" | ", lines)} \u2192 Bank: {player.Bank}G");
         }
 
         CurrentTable.BaccaratPhase = BaccaratPhase.WaitingForBets;
@@ -253,6 +264,35 @@ public class BaccaratEngine
     public Player? GetPlayer(string name) =>
         CurrentTable.Players.Values.FirstOrDefault(p =>
             p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+    public void ForceStop()
+    {
+        MessageQueue.Clear();
+        QueueMessage("Game force stopped by dealer. All bets refunded.");
+        LogAction("Game force stopped - refunding all bets");
+
+        foreach (var kvp in CurrentTable.BaccaratBets)
+        {
+            var bet = kvp.Value;
+            var player = CurrentTable.Players.Values.FirstOrDefault(p =>
+                p.Name.Equals(kvp.Key, StringComparison.OrdinalIgnoreCase));
+            if (player == null) continue;
+
+            int refund = bet.PlayerBet + bet.BankerBet + bet.TieBet;
+            if (refund > 0)
+            {
+                player.Bank += refund;
+                QueueMessage($"{player.Name}: {refund}G refunded \u2192 Bank: {player.Bank}G");
+            }
+        }
+
+        CurrentTable.BaccaratPhase = BaccaratPhase.WaitingForBets;
+        CurrentTable.BaccaratPlayerHand.Clear();
+        CurrentTable.BaccaratBankerHand.Clear();
+        CurrentTable.BaccaratBets.Clear();
+        CurrentTable.GameState = Models.GameState.Lobby;
+        OnUIUpdate?.Invoke();
+    }
 
     private void LogAction(string action)
     {

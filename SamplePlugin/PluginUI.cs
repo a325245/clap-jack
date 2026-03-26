@@ -124,7 +124,7 @@ namespace SamplePlugin
             ImGui.SameLine();
             ImGui.SetNextItemWidth(120);
             int gameType = (int)engine.CurrentTable.GameType;
-            string[] gameTypes = { "Blackjack", "Roulette", "Craps", "Baccarat" };
+            string[] gameTypes = { "Blackjack", "Roulette", "Craps", "Baccarat", "Chocobo Racing" };
             if (ImGui.Combo("##gametype", ref gameType, gameTypes, gameTypes.Length))
             {
                 var newType = (Models.GameType)gameType;
@@ -134,10 +134,11 @@ namespace SamplePlugin
                     engine.CurrentTable.GameState = Models.GameState.Lobby;
                     string gameName = newType switch
                     {
-                        Models.GameType.Roulette  => "Roulette",
-                        Models.GameType.Craps     => "Craps",
-                        Models.GameType.Baccarat  => "Mini Baccarat",
-                        _                         => "Blackjack"
+                        Models.GameType.Roulette      => "Roulette",
+                        Models.GameType.Craps         => "Craps",
+                        Models.GameType.Baccarat      => "Mini Baccarat",
+                        Models.GameType.ChocoboRacing => "Chocobo Racing",
+                        _                             => "Blackjack"
                     };
                     engine.Announce($"Now playing: {gameName}!");
                 }
@@ -156,6 +157,7 @@ namespace SamplePlugin
                 plugin.RouletteEngine.ChatMode = (Models.ChatMode)chatMode;
                 plugin.CrapsEngine.ChatMode    = (Models.ChatMode)chatMode;
                 plugin.BaccaratEngine.ChatMode = (Models.ChatMode)chatMode;
+                plugin.ChocoboEngine.ChatMode  = (Models.ChatMode)chatMode;
             }
 
             ImGui.Separator();
@@ -166,6 +168,8 @@ namespace SamplePlugin
                 DrawCrapsInterface();
             else if (engine.CurrentTable.GameType == Models.GameType.Baccarat)
                 DrawBaccaratInterface();
+            else if (engine.CurrentTable.GameType == Models.GameType.ChocoboRacing)
+                DrawChocoboInterface();
             else
                 DrawDealerInterface();
         }
@@ -1306,13 +1310,13 @@ namespace SamplePlugin
 
             var gameType    = engine.CurrentTable.GameType;
             bool isRoulette  = gameType == Models.GameType.Roulette;
-            bool showBetCol  = gameType != Models.GameType.Craps;
+            bool showBetCol  = gameType != Models.GameType.Craps && gameType != Models.GameType.ChocoboRacing;
             bool showCardsCol = gameType == Models.GameType.Blackjack;
             int c_afk     = showBetCol ? 4 : 3;
             int c_stats   = c_afk + 1;
             int c_cards   = showCardsCol ? c_stats + 1 : -1;
             int c_actions = c_stats + (showCardsCol ? 2 : 1);
-            int colCount  = 5 + (showBetCol ? 1 : 0) + (showCardsCol ? 1 : 0);
+            int colCount  = 6 + (showBetCol ? 1 : 0) + (showCardsCol ? 1 : 0);
 
             if (ImGui.BeginTable("PlayersTable", colCount, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Resizable))
             {
@@ -1325,10 +1329,11 @@ namespace SamplePlugin
                 ImGui.TableSetupColumn("💤 AFK", ImGuiTableColumnFlags.WidthFixed, 50);
                 string statsLabel = gameType switch
                 {
-                    Models.GameType.Roulette => "📊 R.Net",
-                    Models.GameType.Craps    => "📊 C.Net",
-                    Models.GameType.Baccarat => "📊 B.Net",
-                    _                        => "📊 Stats"
+                    Models.GameType.Roulette      => "📊 R.Net",
+                    Models.GameType.Craps         => "📊 C.Net",
+                    Models.GameType.Baccarat      => "📊 B.Net",
+                    Models.GameType.ChocoboRacing => "📊 CH.Net",
+                    _                             => "📊 Stats"
                 };
                 ImGui.TableSetupColumn(statsLabel, ImGuiTableColumnFlags.WidthFixed, 100);
                 if (showCardsCol)
@@ -1504,6 +1509,13 @@ namespace SamplePlugin
                             ImGui.TextColored(nc, net >= 0 ? $"+{net}G" : $"{net}G");
                             break;
                         }
+                        case Models.GameType.ChocoboRacing:
+                        {
+                            int net = player.ChocoboNetGains;
+                            Vector4 nc = net > 0 ? new Vector4(0, 1, 0, 1f) : net < 0 ? new Vector4(1, 0.4f, 0.4f, 1f) : new Vector4(0.7f, 0.7f, 0.7f, 1f);
+                            ImGui.TextColored(nc, net >= 0 ? $"+{net}G" : $"{net}G");
+                            break;
+                        }
                         default:
                             if (player.GamesPlayed > 0)
                             {
@@ -1642,6 +1654,215 @@ namespace SamplePlugin
 
                 ImGui.EndTable();
             }
+
+            ImGui.Separator();
+            ImGui.PushStyleColor(ImGuiCol.Button,        new Vector4(0.55f, 0.10f, 0.10f, 1f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.75f, 0.20f, 0.20f, 1f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive,  new Vector4(1.00f, 0.30f, 0.30f, 1f));
+            if (ImGui.Button("\u26d4 FORCE STOP & REFUND BETS", new Vector2(-1, 28)))
+            {
+                switch (engine.CurrentTable.GameType)
+                {
+                    case Models.GameType.Roulette:      plugin.RouletteEngine.ForceStop(); break;
+                    case Models.GameType.Craps:         plugin.CrapsEngine.ForceStop();    break;
+                    case Models.GameType.Baccarat:      plugin.BaccaratEngine.ForceStop(); break;
+                    case Models.GameType.ChocoboRacing: plugin.ChocoboEngine.ForceStop();  break;
+                    default:                            engine.ForceStop();                break;
+                }
+            }
+            ImGui.PopStyleColor(3);
+        }
+
+        // ── CHOCOBO RACING UI ─────────────────────────────────────────────────────
+
+        private int chocoSelectedPlayerIdx = 0;
+        private int chocoSelectedRacerIdx  = 0;
+        private int chocoBetAmt = 50;
+
+        private void DrawChocoboInterface()
+        {
+            var table  = engine.CurrentTable;
+            var chocobo = plugin.ChocoboEngine;
+            bool racing  = table.ChocoboRacePhase == Models.ChocoboRacePhase.Racing;
+            bool complete = table.ChocoboRacePhase == Models.ChocoboRacePhase.Complete;
+
+            // Phase banner
+            ImGui.TextColored(new Vector4(1, 0.84f, 0, 1),
+                racing  ? "🐦 Race in progress — 30 second race!" :
+                complete ? "🐦 Race complete! Payouts processed." :
+                "🐦 CHOCOBO RACING — Place bets then Start Race!");
+
+            ImGui.Separator();
+
+            // ── Roster ───────────────────────────────────────────────────────────
+            ImGui.TextColored(new Vector4(0.5f, 1, 1, 1), "RACE ROSTER");
+            if (ImGui.BeginTable("##chocoRoster", 6, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+            {
+                ImGui.TableSetupColumn("#",    ImGuiTableColumnFlags.WidthFixed,   22);
+                ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("SPD",  ImGuiTableColumnFlags.WidthFixed,   38);
+                ImGui.TableSetupColumn("END",  ImGuiTableColumnFlags.WidthFixed,   38);
+                ImGui.TableSetupColumn("Odds", ImGuiTableColumnFlags.WidthFixed,   48);
+                ImGui.TableSetupColumn("Bets", ImGuiTableColumnFlags.WidthFixed,   60);
+                ImGui.TableHeadersRow();
+
+                for (int i = 0; i < chocobo.Roster.Length; i++)
+                {
+                    var racer = chocobo.Roster[i];
+                    bool isWinner = complete && chocobo.WinnerIndex == i;
+
+                    ImGui.TableNextRow();
+
+                    if (isWinner)
+                        ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0.4f, 0, 0.35f)));
+
+                    ImGui.TableSetColumnIndex(0);
+                    ImGui.Text($"{racer.Number}");
+
+                    ImGui.TableSetColumnIndex(1);
+                    if (isWinner)
+                        ImGui.TextColored(new Vector4(0.3f, 1f, 0.3f, 1f), $"★ {racer.Name}");
+                    else
+                        ImGui.Text(racer.Name);
+
+                    ImGui.TableSetColumnIndex(2);
+                    ImGui.Text($"{racer.Speed}");
+
+                    ImGui.TableSetColumnIndex(3);
+                    ImGui.Text($"{racer.Endurance}");
+
+                    ImGui.TableSetColumnIndex(4);
+                    ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), $"{racer.Odds:0.0}x");
+
+                    ImGui.TableSetColumnIndex(5);
+                    int totalOnRacer = table.ChocoboBets.Values.Where(b => b.RacerIndex == i).Sum(b => b.Amount);
+                    if (totalOnRacer > 0)
+                        ImGui.TextColored(new Vector4(0.4f, 1, 0.4f, 1), $"{totalOnRacer}G");
+                    else
+                        ImGui.TextColored(new Vector4(0.4f, 0.4f, 0.4f, 1), "-");
+                }
+                ImGui.EndTable();
+            }
+
+            ImGui.Separator();
+
+            // ── Live race progress bars ───────────────────────────────────────────
+            if (racing || complete)
+            {
+                ImGui.TextColored(new Vector4(1, 0.8f, 0, 1), racing ? "RACE IN PROGRESS" : "FINAL POSITIONS");
+
+                float maxProg = chocobo.GetMaxTotalProgress();
+                var order = Enumerable.Range(0, chocobo.Roster.Length)
+                    .OrderByDescending(r => chocobo.GetRacerProgress(r))
+                    .ToList();
+
+                for (int rank = 0; rank < order.Count; rank++)
+                {
+                    int  ri    = order[rank];
+                    var  racer = chocobo.Roster[ri];
+                    float prog = chocobo.GetRacerProgress(ri) / maxProg;
+                    bool isW   = complete && chocobo.WinnerIndex == ri;
+
+                    Vector4 labelCol = isW
+                        ? new Vector4(0.3f, 1f, 0.3f, 1f)
+                        : new Vector4(0.9f, 0.9f, 0.9f, 1f);
+
+                    ImGui.TextColored(labelCol, $"#{racer.Number} {racer.Name}");
+                    ImGui.SameLine(185);
+                    ImGui.ProgressBar(prog, new Vector2(-1, 0), $"{(int)(prog * 100)}%");
+                }
+
+                ImGui.Separator();
+            }
+
+            // ── Start / New Race buttons ──────────────────────────────────────────
+            if (!racing && !complete)
+            {
+                if (ImGui.Button("START RACE", new Vector2(130, 32)))
+                {
+                    if (!chocobo.StartRace(out string err))
+                        engine.Announce(err);
+                }
+                ImGui.SameLine();
+                ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1), "Place bets first. Admin: >START");
+            }
+            else if (complete)
+            {
+                if (ImGui.Button("NEW RACE", new Vector2(110, 28)))
+                {
+                    chocobo.OpenBetting(out _);
+                }
+            }
+            else
+            {
+                double elapsed = (DateTime.Now - table.ChocoboRaceStart).TotalSeconds;
+                double remaining = Math.Max(0, 30.0 - elapsed);
+                ImGui.TextColored(new Vector4(1, 1, 0, 1), $"Time remaining: {remaining:F0}s");
+            }
+
+            ImGui.Separator();
+
+            // ── Bet controls (only during betting phase) ──────────────────────────
+            if (!racing && !complete)
+            {
+                ImGui.TextColored(new Vector4(1, 1, 0, 1), "PLACE BET");
+
+                var pNames = table.Players.Values.Select(p => p.Name).ToArray();
+                if (pNames.Length > 0)
+                {
+                    if (chocoSelectedPlayerIdx >= pNames.Length) chocoSelectedPlayerIdx = 0;
+                    ImGui.SetNextItemWidth(140);
+                    ImGui.Combo("##chocoplayer", ref chocoSelectedPlayerIdx, pNames, pNames.Length);
+                    ImGui.SameLine();
+                    ImGui.SetNextItemWidth(70);
+                    ImGui.InputInt("##chocoamt", ref chocoBetAmt);
+                    if (chocoBetAmt < table.MinBet) chocoBetAmt = table.MinBet;
+                    ImGui.SameLine();
+                    var rNames = chocobo.Roster.Select(r => $"#{r.Number} {r.Name}").ToArray();
+                    ImGui.SetNextItemWidth(170);
+                    ImGui.Combo("##chocoracer", ref chocoSelectedRacerIdx, rNames, rNames.Length);
+                    ImGui.SameLine();
+                    if (ImGui.Button("Bet##chocobet"))
+                        chocobo.PlaceBet(pNames[chocoSelectedPlayerIdx], chocoSelectedRacerIdx + 1, chocoBetAmt, out _);
+                }
+                else
+                {
+                    ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1), "No players at table.");
+                }
+
+                ImGui.Separator();
+            }
+
+            // ── Current bets table ────────────────────────────────────────────────
+            if (table.ChocoboBets.Count > 0)
+            {
+                ImGui.TextColored(new Vector4(0.5f, 1, 1, 1), "CURRENT BETS");
+                if (ImGui.BeginTable("##chocobets", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+                {
+                    ImGui.TableSetupColumn("Player",  ImGuiTableColumnFlags.WidthStretch);
+                    ImGui.TableSetupColumn("Chocobo", ImGuiTableColumnFlags.WidthStretch);
+                    ImGui.TableSetupColumn("Bet",     ImGuiTableColumnFlags.WidthFixed, 60);
+                    ImGui.TableSetupColumn("Odds",    ImGuiTableColumnFlags.WidthFixed, 48);
+                    ImGui.TableHeadersRow();
+
+                    foreach (var kvp in table.ChocoboBets)
+                    {
+                        var bet   = kvp.Value;
+                        var racer = chocobo.Roster[bet.RacerIndex];
+                        var plr   = engine.GetPlayer(kvp.Key);
+
+                        ImGui.TableNextRow();
+                        ImGui.TableSetColumnIndex(0); ImGui.Text(plr?.Name ?? kvp.Key);
+                        ImGui.TableSetColumnIndex(1); ImGui.Text($"#{racer.Number} {racer.Name}");
+                        ImGui.TableSetColumnIndex(2); ImGui.TextColored(new Vector4(1, 1, 0.5f, 1), $"{bet.Amount}G");
+                        ImGui.TableSetColumnIndex(3); ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), $"{racer.Odds:0.0}x");
+                    }
+                    ImGui.EndTable();
+                }
+                ImGui.Separator();
+            }
+
+            DrawPlayersManagementTab();
         }
 
         private void DrawAdminTab()

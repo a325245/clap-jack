@@ -56,6 +56,11 @@ public class Table
     public List<Card> BaccaratBankerHand { get; set; } = new();
     public Dictionary<string, BaccaratBet> BaccaratBets { get; set; } = new();
 
+    // Chocobo Racing
+    public ChocoboRacePhase ChocoboRacePhase { get; set; } = ChocoboRacePhase.WaitingForBets;
+    public DateTime         ChocoboRaceStart { get; set; }
+    public Dictionary<string, ChocoboBet> ChocoboBets { get; set; } = new();
+
     // Dealer rules and properties
     public DealerRules DealerRules { get; set; } = DealerRules.HitsOnSoft17;
     public bool DealerHasBlackjack { get; set; } = false;

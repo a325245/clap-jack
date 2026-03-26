@@ -13,18 +13,21 @@ public class CommandParser
     private RouletteEngine rouletteEngine;
     private CrapsEngine crapsEngine;
     private BaccaratEngine baccaratEngine;
+    private ChocoboEngine chocoboEngine;
 
     public Action<string>? OnChatMessage { get; set; }
     public Action<string, string>? OnPlayerTell { get; set; }
     public Action<string>? OnAdminEcho { get; set; }
 
     public CommandParser(BlackjackEngine engine, RouletteEngine rouletteEngine,
-                         CrapsEngine crapsEngine, BaccaratEngine baccaratEngine)
+                         CrapsEngine crapsEngine, BaccaratEngine baccaratEngine,
+                         ChocoboEngine chocoboEngine)
     {
         this.engine = engine;
         this.rouletteEngine = rouletteEngine;
         this.crapsEngine = crapsEngine;
         this.baccaratEngine = baccaratEngine;
+        this.chocoboEngine = chocoboEngine;
     }
 
     public void Parse(string senderName, string text, string adminName, DealerMode mode, ChatChannel sourceChannel)
@@ -57,6 +60,35 @@ public class CommandParser
 
     private void HandlePlayerCommand(string playerName, string command, string[] parts, DealerMode mode, ChatChannel sourceChannel)
     {
+        // ── Chocobo: > BET [#|name...] [amt] ─────────────────────────────────
+        if (command == "BET" && engine.CurrentTable.GameType == GameType.ChocoboRacing)
+        {
+            // >BET 3 100  (number form)
+            if (parts.Length >= 3 &&
+                int.TryParse(parts[1], out int chocoNum) &&
+                int.TryParse(parts[2], out int chocoAmt))
+            {
+                if (!chocoboEngine.PlaceBet(playerName, chocoNum, chocoAmt, out string err))
+                    SendResponse(err, sourceChannel);
+                return;
+            }
+            // >BET Crimson Flash 100  (name form — last token is amount)
+            if (parts.Length >= 3 && int.TryParse(parts[parts.Length - 1], out int nameAmt))
+            {
+                string racerName = string.Join(" ", parts.Skip(1).Take(parts.Length - 2));
+                var racer = chocoboEngine.Roster.FirstOrDefault(r =>
+                    r.Name.Equals(racerName, StringComparison.OrdinalIgnoreCase));
+                if (racer != null)
+                {
+                    if (!chocoboEngine.PlaceBet(playerName, racer.Number, nameAmt, out string err))
+                        SendResponse(err, sourceChannel);
+                }
+                else
+                    SendResponse($"Unknown chocobo '{racerName}'. Use >BET [1-8] [amount] or full name.", sourceChannel);
+                return;
+            }
+        }
+
         // ── Craps: > BET <TYPE> [num] <amt> ──────────────────────────────────
         if (command == "BET" && parts.Length >= 3 &&
             engine.CurrentTable.GameType == GameType.Craps)
@@ -227,6 +259,22 @@ public class CommandParser
             return;
         }
 
+        // ── Chocobo admin: > OPEN ─────────────────────────────────────────────
+        if (command == "OPEN" && engine.CurrentTable.GameType == GameType.ChocoboRacing)
+        {
+            if (!chocoboEngine.OpenBetting(out string err))
+                SendResponse(err, sourceChannel);
+            return;
+        }
+
+        // ── Chocobo admin: > START ────────────────────────────────────────────
+        if (command == "START" && engine.CurrentTable.GameType == GameType.ChocoboRacing)
+        {
+            if (!chocoboEngine.StartRace(out string err))
+                SendResponse(err, sourceChannel);
+            return;
+        }
+
         // ── Roulette admin: > SPIN ─────────────────────────────────────────────
         if (command == "SPIN" && engine.CurrentTable.GameType == GameType.Roulette)
         {
@@ -272,10 +320,11 @@ public class CommandParser
     {
         return table.GameType switch
         {
-            GameType.Craps    => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Shooter: >ROLL | Come-out: >BET PASS [amt]  >BET DONTPASS [amt] | After point: >BET FIELD [amt]  >BET BIG6 [amt]  >BET BIG8 [amt]  >BET PLACE [4/5/6/8/9/10] [amt] | 7/11=Natural, 2/3=Craps, 12=Push.",
-            GameType.Baccarat => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Baccarat: >BET PLAYER [amt]  >BET BANKER [amt]  >BET TIE [amt] | Admin: >DEAL | Closest to 9 wins. Player 1:1, Banker 1:1, Tie 8:1.",
-            GameType.Roulette => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Roulette: >BET [amt] ON [targets] | Admin: >SPIN | Targets: RED BLACK EVEN ODD 0-36.",
-            _                 => $"Min: {table.MinBet}G Max: {table.MaxBet}G | BJ: >HIT >STAND >DOUBLE >SPLIT >INSURANCE >BET [amt] | >BANK >AFK >HELP"
+            GameType.Craps         => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Shooter: >ROLL | Come-out: >BET PASS [amt]  >BET DONTPASS [amt] | After point: >BET FIELD [amt]  >BET BIG6 [amt]  >BET BIG8 [amt]  >BET PLACE [4/5/6/8/9/10] [amt] | 7/11=Natural, 2/3=Craps, 12=Push.",
+            GameType.Baccarat      => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Baccarat: >BET PLAYER [amt]  >BET BANKER [amt]  >BET TIE [amt] | Admin: >DEAL | Closest to 9 wins. Player 1:1, Banker 1:1, Tie 8:1.",
+            GameType.Roulette      => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Roulette: >BET [amt] ON [targets] | Admin: >SPIN | Targets: RED BLACK EVEN ODD 0-36.",
+            GameType.ChocoboRacing => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Chocobo: >BET [1-8 or name] [amt] | Admin: >OPEN (open betting) >START (start race) | 8 racers, 30s race. Odds: #1=2x #2=2.5x #3=3x #4=3.5x #5=4.5x #6=5x #7=7x #8=9x",
+            _                      => $"Min: {table.MinBet}G Max: {table.MaxBet}G | BJ: >HIT >STAND >DOUBLE >SPLIT >INSURANCE >BET [amt] | >BANK >AFK >HELP"
         };
     }
 }

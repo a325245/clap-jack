@@ -825,6 +825,37 @@ public class BlackjackEngine
         }
     }
 
+    public void ForceStop()
+    {
+        DealerMessageQueue.Clear();
+        SendDealerMessage("Game force stopped by dealer. All bets refunded.");
+        LogAction("Game force stopped - refunding all bets");
+
+        foreach (var player in CurrentTable.Players.Values)
+        {
+            int refund = player.CurrentBets.Sum() + player.InsuranceBet;
+            if (refund > 0)
+            {
+                player.Bank += refund;
+                SendDealerMessage($"{player.Name}: {refund}G refunded \u2192 Bank: {player.Bank}G");
+            }
+            player.Hands.Clear();
+            player.CurrentBets.Clear();
+            player.IsStanding = false;
+            player.HasDoubledDown = false;
+            player.HasInsurance = false;
+            player.InsuranceBet = 0;
+        }
+
+        CurrentTable.DealerHand.Clear();
+        CurrentTable.TurnOrder.Clear();
+        CurrentTable.CurrentTurnIndex = 0;
+        CurrentTable.HoleCardRevealed = false;
+        CurrentTable.GameState = Models.GameState.Lobby;
+        LogAction("Game force stopped - state reset to Lobby");
+        OnUIUpdate?.Invoke();
+    }
+
     public void SaveState()
     {
         // For now, simplified - would need proper deep clone

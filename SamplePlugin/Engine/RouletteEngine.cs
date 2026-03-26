@@ -243,6 +243,28 @@ public class RouletteEngine
         CurrentTable.Players.Values.FirstOrDefault(p =>
             p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
+    public void ForceStop()
+    {
+        MessageQueue.Clear();
+        QueueMessage("Game force stopped by dealer. All bets refunded.");
+        LogAction("Game force stopped - refunding all bets");
+
+        foreach (var player in CurrentTable.Players.Values)
+        {
+            int refund = player.RouletteBets.Sum(b => b.Amount);
+            if (refund > 0)
+            {
+                player.Bank += refund;
+                QueueMessage($"{player.Name}: {refund}G refunded \u2192 Bank: {player.Bank}G");
+            }
+            player.RouletteBets.Clear();
+        }
+
+        CurrentTable.RouletteSpinState = RouletteSpinState.Idle;
+        CurrentTable.GameState = Models.GameState.Lobby;
+        OnUIUpdate?.Invoke();
+    }
+
     private void LogAction(string action)
     {
         string timestamp = DateTime.Now.ToString("HH:mm:ss");

@@ -39,6 +39,7 @@ public class Player
     public int RouletteNetGains  { get; set; } = 0;
     public int CrapsNetGains      { get; set; } = 0;
     public int BaccaratNetGains   { get; set; } = 0;
+    public int ChocoboNetGains    { get; set; } = 0;
 
     public Player(string name, string server = "")
     {
