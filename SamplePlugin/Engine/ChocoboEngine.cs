@@ -13,6 +13,7 @@ public class ChocoboRacer
     public string Name      { get; init; } = string.Empty;
     public int    Speed     { get; init; }   // 1-100, drives early-race pace
     public int    Endurance { get; init; }   // 1-100, drives late-race pace
+    public float  XFactor   { get; init; }   // 1.0–1.25, random multiplier per race
     public float  Odds      { get; init; }   // total return multiplier  (bet * Odds back on win)
     public string Color     { get; init; } = string.Empty;
 }
@@ -81,6 +82,7 @@ public class ChocoboEngine
             Name      = r.Name,
             Speed     = r.Speed,
             Endurance = r.Endurance,
+            XFactor   = Rng.NextSingle() * 0.25f + 1.0f,
             Odds      = OddsByRank[i],
             Color     = ColorByRank[i],
         }).ToArray();
@@ -222,8 +224,8 @@ public class ChocoboEngine
             for (int s = 0; s < TotalSegments; s++)
             {
                 float segFraction = (float)s / (TotalSegments - 1);
-                float statContrib = racer.Speed     * (1.0f - segFraction * 0.4f)
-                                  + racer.Endurance * (segFraction * 0.5f);
+                float statContrib = (racer.Speed     * (1.0f - segFraction * 0.4f)
+                                  + racer.Endurance * (segFraction * 0.5f)) * racer.XFactor;
                 float basePace    = (float)(Rng.NextDouble() * 120 + 40); // 40-160 wide random
                 float segment     = basePace + statContrib * 0.18f;       // stats ~15% influence
                 cumulative       += MathF.Max(0, segment);
@@ -357,7 +359,8 @@ public class ChocoboEngine
     /// <summary>Returns smoothly interpolated progress for a racer for UI bar display.</summary>
     public float GetRacerProgress(int racerIndex)
     {
-        if (CurrentTable.ChocoboRacePhase == ChocoboRacePhase.WaitingForBets) return 0f;
+        if (CurrentTable.ChocoboRacePhase == ChocoboRacePhase.Idle ||
+            CurrentTable.ChocoboRacePhase == ChocoboRacePhase.WaitingForBets) return 0f;
         if (CurrentTable.ChocoboRacePhase == ChocoboRacePhase.Complete)
             return _segmentCumProgress[racerIndex, TotalSegments - 1];
 
@@ -402,12 +405,12 @@ public class ChocoboEngine
         }
 
         CurrentTable.ChocoboBets.Clear();
-        CurrentTable.ChocoboRacePhase = ChocoboRacePhase.WaitingForBets;
+        CurrentTable.ChocoboRacePhase = ChocoboRacePhase.Idle;
         CurrentTable.GameState = Models.GameState.Lobby;
         OnUIUpdate?.Invoke();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Helpers
 
     public Player? GetPlayer(string name) =>
         CurrentTable.Players.Values.FirstOrDefault(p =>

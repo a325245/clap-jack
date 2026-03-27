@@ -14,6 +14,7 @@ public class CommandParser
     private CrapsEngine crapsEngine;
     private BaccaratEngine baccaratEngine;
     private ChocoboEngine chocoboEngine;
+    private PokerEngine pokerEngine;
 
     public Action<string>? OnChatMessage { get; set; }
     public Action<string, string>? OnPlayerTell { get; set; }
@@ -21,13 +22,14 @@ public class CommandParser
 
     public CommandParser(BlackjackEngine engine, RouletteEngine rouletteEngine,
                          CrapsEngine crapsEngine, BaccaratEngine baccaratEngine,
-                         ChocoboEngine chocoboEngine)
+                         ChocoboEngine chocoboEngine, PokerEngine pokerEngine)
     {
         this.engine = engine;
         this.rouletteEngine = rouletteEngine;
         this.crapsEngine = crapsEngine;
         this.baccaratEngine = baccaratEngine;
         this.chocoboEngine = chocoboEngine;
+        this.pokerEngine = pokerEngine;
     }
 
     public void Parse(string senderName, string text, string adminName, DealerMode mode, ChatChannel sourceChannel)
@@ -36,6 +38,9 @@ public class CommandParser
 
         var parts = text.Substring(1).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0) return;
+
+        // No game active — ignore all commands
+        if (engine.CurrentTable.GameType == GameType.None) return;
 
         string command = parts[0].ToUpperInvariant();
         bool isAdmin = senderName.Equals(adminName, StringComparison.OrdinalIgnoreCase);
@@ -60,6 +65,41 @@ public class CommandParser
 
     private void HandlePlayerCommand(string playerName, string command, string[] parts, DealerMode mode, ChatChannel sourceChannel)
     {
+        // ── Texas Hold'Em player commands ─────────────────────────────────────
+        if (engine.CurrentTable.GameType == GameType.TexasHoldEm)
+        {
+            switch (command)
+            {
+                case "FOLD":
+                    if (!pokerEngine.PlayerFold(playerName, out string fErr))
+                        SendResponse(fErr, sourceChannel);
+                    return;
+                case "CHECK":
+                    if (!pokerEngine.PlayerCheck(playerName, out string chErr))
+                        SendResponse(chErr, sourceChannel);
+                    return;
+                case "CALL":
+                    if (!pokerEngine.PlayerCall(playerName, out string caErr))
+                        SendResponse(caErr, sourceChannel);
+                    return;
+                case "RAISE":
+                    if (parts.Length >= 2 && int.TryParse(parts[1], out int raiseAmt))
+                    {
+                        if (!pokerEngine.PlayerRaise(playerName, raiseAmt, out string rErr))
+                            SendResponse(rErr, sourceChannel);
+                    }
+                    else SendResponse("Usage: >RAISE [amount]", sourceChannel);
+                    return;
+                case "ALL":
+                    if (parts.Length >= 2 && parts[1].ToUpperInvariant() == "IN")
+                    {
+                        if (!pokerEngine.PlayerAllIn(playerName, out string aiErr))
+                            SendResponse(aiErr, sourceChannel);
+                    }
+                    return;
+            }
+        }
+
         // ── Chocobo: > BET [#|name...] [amt] ─────────────────────────────────
         if (command == "BET" && engine.CurrentTable.GameType == GameType.ChocoboRacing)
         {
@@ -243,6 +283,21 @@ public class CommandParser
 
     private void HandleAdminCommand(string admin, string command, string[] parts, DealerMode mode, ChatChannel sourceChannel)
     {
+        // ── Texas Hold'Em admin: > DEAL ───────────────────────────────────────
+        if (command == "DEAL" && engine.CurrentTable.GameType == GameType.TexasHoldEm)
+        {
+            if (!pokerEngine.DealHand(out string err))
+                SendResponse(err, sourceChannel);
+            return;
+        }
+
+        // ── Texas Hold'Em admin: > TABLE ──────────────────────────────────────
+        if (command == "TABLE" && engine.CurrentTable.GameType == GameType.TexasHoldEm)
+        {
+            pokerEngine.AnnounceTable();
+            return;
+        }
+
         // ── Craps admin: > ROLL ───────────────────────────────────────────────
         if (command == "ROLL" && engine.CurrentTable.GameType == GameType.Craps)
         {
@@ -324,6 +379,7 @@ public class CommandParser
             GameType.Baccarat      => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Baccarat: >BET PLAYER [amt]  >BET BANKER [amt]  >BET TIE [amt] | Admin: >DEAL | Closest to 9 wins. Player 1:1, Banker 1:1, Tie 8:1.",
             GameType.Roulette      => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Roulette: >BET [amt] ON [targets] | Admin: >SPIN | Targets: RED BLACK EVEN ODD 0-36.",
             GameType.ChocoboRacing => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Chocobo: >BET [1-8 or name] [amt] | Admin: >OPEN (open betting) >START (start race) | 8 racers, 30s race. Odds: #1=2x #2=2.5x #3=3x #4=3.5x #5=4.5x #6=5x #7=7x #8=9x",
+            GameType.TexasHoldEm  => $"SB: {table.PokerSmallBlind}G  BB: {table.PokerSmallBlind * 2}G | >CALL  >CHECK  >RAISE [+amt]  >FOLD  >ALL IN | Admin: >DEAL (new hand)  >TABLE (seat order)",
             _                      => $"Min: {table.MinBet}G Max: {table.MaxBet}G | BJ: >HIT >STAND >DOUBLE >SPLIT >INSURANCE >BET [amt] | >BANK >AFK >HELP"
         };
     }

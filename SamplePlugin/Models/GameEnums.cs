@@ -27,11 +27,13 @@ public enum ChatMode
 
 public enum GameType
 {
+    None,
     Blackjack,
     Roulette,
     Craps,
     Baccarat,
-    ChocoboRacing
+    ChocoboRacing,
+    TexasHoldEm
 }
 
 public enum RouletteSpinState
@@ -56,7 +58,27 @@ public enum BaccaratPhase
 
 public enum ChocoboRacePhase
 {
+    Idle,
     WaitingForBets,
     Racing,
     Complete
+}
+
+public enum PokerPhase
+{
+    WaitingForPlayers,
+    PreFlop,
+    Flop,
+    Turn,
+    River,
+    Showdown,
+    Complete
+}
+
+public enum PokerPlayerStatus
+{
+    Empty,
+    Active,
+    Folded,
+    AllIn
 }

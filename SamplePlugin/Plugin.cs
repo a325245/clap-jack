@@ -39,6 +39,7 @@ namespace SamplePlugin
         public CrapsEngine CrapsEngine { get; init; }
         public BaccaratEngine BaccaratEngine { get; init; }
         public ChocoboEngine ChocoboEngine { get; init; }
+        public PokerEngine    PokerEngine   { get; init; }
         public CommandParser CommandParser { get; init; }
         public ChatHandler ChatHandler { get; init; }
         public PluginUI UI { get; init; }
@@ -73,7 +74,8 @@ namespace SamplePlugin
             CrapsEngine = new CrapsEngine(Engine.CurrentTable);
             BaccaratEngine = new BaccaratEngine(Engine.CurrentTable);
             ChocoboEngine = new ChocoboEngine(Engine.CurrentTable);
-            CommandParser = new CommandParser(Engine, RouletteEngine, CrapsEngine, BaccaratEngine, ChocoboEngine);
+            PokerEngine   = new PokerEngine(Engine.CurrentTable);
+            CommandParser = new CommandParser(Engine, RouletteEngine, CrapsEngine, BaccaratEngine, ChocoboEngine, PokerEngine);
             ChatHandler = new ChatHandler();
 
             // Wire up roulette events (reuse same send helpers)
@@ -95,6 +97,11 @@ namespace SamplePlugin
             ChocoboEngine.OnChatMessage += SendGameMessage;
             ChocoboEngine.OnPlayerTell += SendPlayerTell;
             ChocoboEngine.OnUIUpdate += () => { };
+
+            // Wire up poker events
+            PokerEngine.OnChatMessage += SendGameMessage;
+            PokerEngine.OnPlayerTell  += SendPlayerTell;
+            PokerEngine.OnUIUpdate    += () => { };
 
             // Wire up callbacks
             Engine.OnChatMessage += SendGameMessage;
@@ -294,6 +301,9 @@ namespace SamplePlugin
             // Process chocobo race state machine and message queue
             ChocoboEngine.ProcessRace();
             ChocoboEngine.ProcessMessageQueue();
+
+            // Process poker turn timer and message queue
+            PokerEngine.ProcessTick();
 
             ProcessMessageQueue();
             UI.Draw();

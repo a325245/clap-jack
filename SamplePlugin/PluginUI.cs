@@ -49,6 +49,7 @@ namespace SamplePlugin
         private string kickPlayerName = string.Empty;
         private string afkPlayerName = string.Empty;
         private string simulatePlayerName = string.Empty;
+        private bool _showPokerHoleCards = true;
 
         public PluginUI(Plugin plugin, BlackjackEngine engine)
         {
@@ -122,9 +123,9 @@ namespace SamplePlugin
             // Game type selector
             ImGui.Text("Game:");
             ImGui.SameLine();
-            ImGui.SetNextItemWidth(120);
+            ImGui.SetNextItemWidth(140);
             int gameType = (int)engine.CurrentTable.GameType;
-            string[] gameTypes = { "Blackjack", "Roulette", "Craps", "Baccarat", "Chocobo Racing" };
+            string[] gameTypes = { "None", "Blackjack", "Roulette", "Craps", "Baccarat", "Chocobo Racing", "Texas Hold'Em" };
             if (ImGui.Combo("##gametype", ref gameType, gameTypes, gameTypes.Length))
             {
                 var newType = (Models.GameType)gameType;
@@ -132,15 +133,23 @@ namespace SamplePlugin
                 {
                     engine.CurrentTable.GameType = newType;
                     engine.CurrentTable.GameState = Models.GameState.Lobby;
-                    string gameName = newType switch
+                    if (newType == Models.GameType.None)
                     {
-                        Models.GameType.Roulette      => "Roulette",
-                        Models.GameType.Craps         => "Craps",
-                        Models.GameType.Baccarat      => "Mini Baccarat",
-                        Models.GameType.ChocoboRacing => "Chocobo Racing",
-                        _                             => "Blackjack"
-                    };
-                    engine.Announce($"Now playing: {gameName}!");
+                        engine.Announce("Plugin set to idle — commands are now disabled.");
+                    }
+                    else
+                    {
+                        string gameName = newType switch
+                        {
+                            Models.GameType.Roulette      => "Roulette",
+                            Models.GameType.Craps         => "Craps",
+                            Models.GameType.Baccarat      => "Mini Baccarat",
+                            Models.GameType.ChocoboRacing => "Chocobo Racing",
+                            Models.GameType.TexasHoldEm   => "Texas Hold'Em",
+                            _                             => "Blackjack"
+                        };
+                        engine.Announce($"Now playing: {gameName}!");
+                    }
                 }
             }
 
@@ -158,11 +167,14 @@ namespace SamplePlugin
                 plugin.CrapsEngine.ChatMode    = (Models.ChatMode)chatMode;
                 plugin.BaccaratEngine.ChatMode = (Models.ChatMode)chatMode;
                 plugin.ChocoboEngine.ChatMode  = (Models.ChatMode)chatMode;
+                plugin.PokerEngine.ChatMode    = (Models.ChatMode)chatMode;
             }
 
             ImGui.Separator();
 
-            if (engine.CurrentTable.GameType == Models.GameType.Roulette)
+            if (engine.CurrentTable.GameType == Models.GameType.None)
+                DrawNoneInterface();
+            else if (engine.CurrentTable.GameType == Models.GameType.Roulette)
                 DrawRouletteInterface();
             else if (engine.CurrentTable.GameType == Models.GameType.Craps)
                 DrawCrapsInterface();
@@ -170,6 +182,8 @@ namespace SamplePlugin
                 DrawBaccaratInterface();
             else if (engine.CurrentTable.GameType == Models.GameType.ChocoboRacing)
                 DrawChocoboInterface();
+            else if (engine.CurrentTable.GameType == Models.GameType.TexasHoldEm)
+                DrawPokerInterface();
             else
                 DrawDealerInterface();
         }
@@ -1310,8 +1324,12 @@ namespace SamplePlugin
 
             var gameType    = engine.CurrentTable.GameType;
             bool isRoulette  = gameType == Models.GameType.Roulette;
-            bool showBetCol  = gameType != Models.GameType.Craps && gameType != Models.GameType.ChocoboRacing;
-            bool showCardsCol = gameType == Models.GameType.Blackjack;
+            bool showBetCol  = gameType != Models.GameType.None &&
+                               gameType != Models.GameType.Craps &&
+                               gameType != Models.GameType.ChocoboRacing &&
+                               gameType != Models.GameType.TexasHoldEm;
+            bool showPokerCards = gameType == Models.GameType.TexasHoldEm && _showPokerHoleCards;
+            bool showCardsCol = gameType == Models.GameType.Blackjack || showPokerCards;
             int c_afk     = showBetCol ? 4 : 3;
             int c_stats   = c_afk + 1;
             int c_cards   = showCardsCol ? c_stats + 1 : -1;
@@ -1333,11 +1351,15 @@ namespace SamplePlugin
                     Models.GameType.Craps         => "📊 C.Net",
                     Models.GameType.Baccarat      => "📊 B.Net",
                     Models.GameType.ChocoboRacing => "📊 CH.Net",
+                    Models.GameType.TexasHoldEm   => "📊 P.Net",
                     _                             => "📊 Stats"
                 };
                 ImGui.TableSetupColumn(statsLabel, ImGuiTableColumnFlags.WidthFixed, 100);
                 if (showCardsCol)
-                    ImGui.TableSetupColumn("🎴 Cards", ImGuiTableColumnFlags.WidthFixed, 300);
+                    ImGui.TableSetupColumn(
+                        showPokerCards ? "🂠 Hole Cards" : "🎴 Cards",
+                        ImGuiTableColumnFlags.WidthFixed,
+                        showPokerCards ? 90 : 300);
                 ImGui.TableSetupColumn("🔧 Actions", ImGuiTableColumnFlags.WidthFixed, 160);
                 ImGui.TableHeadersRow();
 
@@ -1516,6 +1538,13 @@ namespace SamplePlugin
                             ImGui.TextColored(nc, net >= 0 ? $"+{net}G" : $"{net}G");
                             break;
                         }
+                        case Models.GameType.TexasHoldEm:
+                        {
+                            int net = player.PokerNetGains;
+                            Vector4 nc = net > 0 ? new Vector4(0, 1, 0, 1f) : net < 0 ? new Vector4(1, 0.4f, 0.4f, 1f) : new Vector4(0.7f, 0.7f, 0.7f, 1f);
+                            ImGui.TextColored(nc, net >= 0 ? $"+{net}G" : $"{net}G");
+                            break;
+                        }
                         default:
                             if (player.GamesPlayed > 0)
                             {
@@ -1529,10 +1558,16 @@ namespace SamplePlugin
                             break;
                     }
 
-                    // Cards Column — only shown for Blackjack
+                    // Cards Column — Blackjack or Poker hole cards
                     if (showCardsCol)
                     {
                         ImGui.TableSetColumnIndex(c_cards);
+                        if (showPokerCards)
+                        {
+                            DrawPokerHoleCardsCell(player);
+                        }
+                        else
+                        {
                     if (player.Hands.Count > 0)
                     {
                         for (int handIndex = 0; handIndex < player.Hands.Count; handIndex++)
@@ -1626,7 +1661,8 @@ namespace SamplePlugin
                         }
                         ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), "Cards");
                     }
-                    } // end !isRoulette cards block
+                        } // end blackjack cards block
+                    } // end showCardsCol block
 
                     // Actions Column
                     ImGui.TableSetColumnIndex(c_actions);
@@ -1663,14 +1699,55 @@ namespace SamplePlugin
             {
                 switch (engine.CurrentTable.GameType)
                 {
+                    case Models.GameType.None:              break;
                     case Models.GameType.Roulette:      plugin.RouletteEngine.ForceStop(); break;
                     case Models.GameType.Craps:         plugin.CrapsEngine.ForceStop();    break;
                     case Models.GameType.Baccarat:      plugin.BaccaratEngine.ForceStop(); break;
                     case Models.GameType.ChocoboRacing: plugin.ChocoboEngine.ForceStop();  break;
+                    case Models.GameType.TexasHoldEm:   plugin.PokerEngine.ForceStop();    break;
                     default:                            engine.ForceStop();                break;
                 }
             }
             ImGui.PopStyleColor(3);
+        }
+
+        // ── NONE (IDLE) UI ────────────────────────────────────────────────────────
+
+        private void DrawNoneInterface()
+        {
+            ImGui.Spacing();
+            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), "🚫  NO GAME ACTIVE");
+            ImGui.Spacing();
+            ImGui.TextWrapped("The plugin is currently idle. Select a game from the dropdown above to begin. No chat commands will be processed.");
+            ImGui.Separator();
+            DrawPlayersManagementTab();
+        }
+
+        // ── POKER HOLE CARDS CELL HELPER ──────────────────────────────────────────
+
+        private void DrawPokerHoleCardsCell(Models.Player player)
+        {
+            var table = engine.CurrentTable;
+            bool handInProgress = table.PokerPhase != Models.PokerPhase.WaitingForPlayers &&
+                                   table.PokerPhase != Models.PokerPhase.Complete;
+            var seat = plugin.PokerEngine.Seats.FirstOrDefault(s =>
+                s.IsOccupied && s.PlayerName.Equals(player.Name, StringComparison.OrdinalIgnoreCase));
+            if (seat == null || !handInProgress || string.IsNullOrEmpty(seat.HoleCard1.Value))
+            {
+                ImGui.TextColored(new Vector4(0.4f, 0.4f, 0.4f, 1f), "—");
+                return;
+            }
+            float alpha = seat.IsFolded ? 0.45f : 1f;
+            var c1 = seat.HoleCard1;
+            var c2 = seat.HoleCard2;
+            ImGui.TextColored(new Vector4(c1.IsRed ? 1f : 0.9f, c1.IsRed ? 0.3f : 0.9f, c1.IsRed ? 0.3f : 0.9f, alpha), c1.GetCardDisplay());
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(c2.IsRed ? 1f : 0.9f, c2.IsRed ? 0.3f : 0.9f, c2.IsRed ? 0.3f : 0.9f, alpha), c2.GetCardDisplay());
+            if (seat.IsFolded)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 0.8f), "✗");
+            }
         }
 
         // ── CHOCOBO RACING UI ─────────────────────────────────────────────────────
@@ -1683,25 +1760,28 @@ namespace SamplePlugin
         {
             var table  = engine.CurrentTable;
             var chocobo = plugin.ChocoboEngine;
-            bool racing  = table.ChocoboRacePhase == Models.ChocoboRacePhase.Racing;
+            bool racing   = table.ChocoboRacePhase == Models.ChocoboRacePhase.Racing;
             bool complete = table.ChocoboRacePhase == Models.ChocoboRacePhase.Complete;
+            bool idle     = table.ChocoboRacePhase == Models.ChocoboRacePhase.Idle;
 
             // Phase banner
             ImGui.TextColored(new Vector4(1, 0.84f, 0, 1),
-                racing  ? "🐦 Race in progress — 30 second race!" :
+                racing   ? "🐦 Race in progress — 30 second race!" :
                 complete ? "🐦 Race complete! Payouts processed." :
+                idle     ? "🐦 CHOCOBO RACING — Press New Race to open betting." :
                 "🐦 CHOCOBO RACING — Place bets then Start Race!");
 
             ImGui.Separator();
 
             // ── Roster ───────────────────────────────────────────────────────────
             ImGui.TextColored(new Vector4(0.5f, 1, 1, 1), "RACE ROSTER");
-            if (ImGui.BeginTable("##chocoRoster", 6, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+            if (ImGui.BeginTable("##chocoRoster", 7, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
             {
                 ImGui.TableSetupColumn("#",    ImGuiTableColumnFlags.WidthFixed,   22);
                 ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch);
                 ImGui.TableSetupColumn("SPD",  ImGuiTableColumnFlags.WidthFixed,   38);
                 ImGui.TableSetupColumn("END",  ImGuiTableColumnFlags.WidthFixed,   38);
+                ImGui.TableSetupColumn("XF",   ImGuiTableColumnFlags.WidthFixed,   42);
                 ImGui.TableSetupColumn("Odds", ImGuiTableColumnFlags.WidthFixed,   48);
                 ImGui.TableSetupColumn("Bets", ImGuiTableColumnFlags.WidthFixed,   60);
                 ImGui.TableHeadersRow();
@@ -1732,9 +1812,12 @@ namespace SamplePlugin
                     ImGui.Text($"{racer.Endurance}");
 
                     ImGui.TableSetColumnIndex(4);
-                    ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), $"{racer.Odds:0.0}x");
+                    ImGui.TextColored(new Vector4(0.6f, 1f, 0.8f, 1f), $"{racer.XFactor:0.00}x");
 
                     ImGui.TableSetColumnIndex(5);
+                    ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), $"{racer.Odds:0.0}x");
+
+                    ImGui.TableSetColumnIndex(6);
                     int totalOnRacer = table.ChocoboBets.Values.Where(b => b.RacerIndex == i).Sum(b => b.Amount);
                     if (totalOnRacer > 0)
                         ImGui.TextColored(new Vector4(0.4f, 1, 0.4f, 1), $"{totalOnRacer}G");
@@ -1776,7 +1859,14 @@ namespace SamplePlugin
             }
 
             // ── Start / New Race buttons ──────────────────────────────────────────
-            if (!racing && !complete)
+            if (idle || complete)
+            {
+                if (ImGui.Button("NEW RACE", new Vector2(110, 32)))
+                {
+                    chocobo.OpenBetting(out _);
+                }
+            }
+            else if (!racing)
             {
                 if (ImGui.Button("START RACE", new Vector2(130, 32)))
                 {
@@ -1785,13 +1875,6 @@ namespace SamplePlugin
                 }
                 ImGui.SameLine();
                 ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1), "Place bets first. Admin: >START");
-            }
-            else if (complete)
-            {
-                if (ImGui.Button("NEW RACE", new Vector2(110, 28)))
-                {
-                    chocobo.OpenBetting(out _);
-                }
             }
             else
             {
@@ -1803,7 +1886,7 @@ namespace SamplePlugin
             ImGui.Separator();
 
             // ── Bet controls (only during betting phase) ──────────────────────────
-            if (!racing && !complete)
+            if (!idle && !racing && !complete)
             {
                 ImGui.TextColored(new Vector4(1, 1, 0, 1), "PLACE BET");
 
@@ -1862,10 +1945,306 @@ namespace SamplePlugin
                 ImGui.Separator();
             }
 
-            DrawPlayersManagementTab();
-        }
+                    DrawPlayersManagementTab();
+            }
 
-        private void DrawAdminTab()
+            // ── TEXAS HOLD'EM UI ───────────────────────────────────────────────────────
+
+            private int pokerProxyRaiseAmt = 100;
+
+            private void DrawPokerInterface()
+            {
+                var table  = engine.CurrentTable;
+                var poker  = plugin.PokerEngine;
+                bool inHand = table.PokerPhase != Models.PokerPhase.WaitingForPlayers &&
+                              table.PokerPhase != Models.PokerPhase.Complete;
+
+                // Phase banner
+                Vector4 bannerCol = table.PokerPhase switch
+                {
+                    Models.PokerPhase.PreFlop  => new Vector4(0.4f, 0.8f, 1f,  1f),
+                    Models.PokerPhase.Flop     => new Vector4(0.4f, 1f,   0.6f, 1f),
+                    Models.PokerPhase.Turn     => new Vector4(1f,   0.8f, 0.2f, 1f),
+                    Models.PokerPhase.River    => new Vector4(1f,   0.5f, 0.2f, 1f),
+                    Models.PokerPhase.Showdown => new Vector4(1f,   0.3f, 0.3f, 1f),
+                    Models.PokerPhase.Complete => new Vector4(0.5f, 1f,   0.5f, 1f),
+                    _                          => new Vector4(0.8f, 0.8f, 0.8f, 1f)
+                };
+                string phaseLabel = table.PokerPhase switch
+                {
+                    Models.PokerPhase.WaitingForPlayers => "♠ Texas Hold'Em — Press DEAL to start a hand.",
+                    Models.PokerPhase.PreFlop  => "♠ Pre-Flop",
+                    Models.PokerPhase.Flop     => "♠ Flop",
+                    Models.PokerPhase.Turn     => "♠ Turn",
+                    Models.PokerPhase.River    => "♠ River",
+                    Models.PokerPhase.Showdown => "♠ SHOWDOWN",
+                    Models.PokerPhase.Complete => "♠ Hand complete! Press DEAL for next hand.",
+                    _                          => "♠ Texas Hold'Em"
+                };
+                ImGui.TextColored(bannerCol, phaseLabel);
+
+                // Pot + blind info
+                if (inHand || table.PokerPhase == Models.PokerPhase.Complete)
+                {
+                    ImGui.SameLine();
+                    ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"  POT: {table.PokerPot}G");
+                }
+
+                ImGui.Separator();
+
+                // ── Oval table canvas ────────────────────────────────────────────────────
+                var drawList = ImGui.GetWindowDrawList();
+                Vector2 canvasPos  = ImGui.GetCursorScreenPos();
+                float   canvasW    = 620f;
+                float   canvasH    = 270f;
+                Vector2 center     = canvasPos + new Vector2(canvasW * 0.5f, canvasH * 0.5f);
+
+                // Felt oval background
+                uint feltColor   = ImGui.ColorConvertFloat4ToU32(new Vector4(0.08f, 0.35f, 0.08f, 1f));
+                uint feltBorder  = ImGui.ColorConvertFloat4ToU32(new Vector4(0.6f,  0.4f,  0.1f,  1f));
+                uint potColor    = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.84f, 0f, 1f));
+                uint textWhite   = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 1f));
+                uint textGray    = ImGui.ColorConvertFloat4ToU32(new Vector4(0.7f, 0.7f, 0.7f, 1f));
+
+                float rx = 205f, ry = 80f;
+                const int segs = 48;
+                var ovalPath = new List<Vector2>(segs);
+                for (int si = 0; si < segs; si++)
+                {
+                    float ang = (float)(si * 2 * Math.PI / segs);
+                    ovalPath.Add(center + new Vector2(MathF.Cos(ang) * rx, MathF.Sin(ang) * ry));
+                }
+                foreach (var pt in ovalPath) drawList.PathLineTo(pt);
+                drawList.PathFillConvex(feltColor);
+                foreach (var pt in ovalPath) drawList.PathLineTo(pt);
+                drawList.PathStroke(feltBorder, ImDrawFlags.Closed, 3f);
+
+                // Pot label in center of felt
+                string potStr  = $"POT: {table.PokerPot}G";
+                var    potSize = ImGui.CalcTextSize(potStr);
+                drawList.AddText(center - potSize * 0.5f + new Vector2(0, -10f), potColor, potStr);
+
+                // Community cards (up to 5), centered below pot label
+                if (table.PokerCommunity.Count > 0)
+                {
+                    float cardW = 30f, cardH = 22f, gap = 4f;
+                    int   numCards = table.PokerCommunity.Count;
+                    float totalW = numCards * cardW + (numCards - 1) * gap;
+                    float startX = center.X - totalW * 0.5f;
+                    float cardY  = center.Y;
+
+                    for (int ci = 0; ci < numCards; ci++)
+                    {
+                        var    card      = table.PokerCommunity[ci];
+                        bool   isRed     = card.Suit == "H" || card.Suit == "D";
+                        uint   cardBg    = ImGui.ColorConvertFloat4ToU32(new Vector4(0.95f, 0.95f, 0.90f, 1f));
+                        uint   cardText  = ImGui.ColorConvertFloat4ToU32(isRed
+                                           ? new Vector4(0.85f, 0.1f, 0.1f, 1f)
+                                           : new Vector4(0.05f, 0.05f, 0.05f, 1f));
+                        Vector2 cardPos = new Vector2(startX + ci * (cardW + gap), cardY);
+                        drawList.AddRectFilled(cardPos, cardPos + new Vector2(cardW, cardH), cardBg, 3f);
+                        drawList.AddRect(cardPos, cardPos + new Vector2(cardW, cardH), cardText, 3f);
+                        string  label    = card.GetCardDisplay();
+                        var     lblSz    = ImGui.CalcTextSize(label);
+                        drawList.AddText(cardPos + new Vector2(cardW, cardH) * 0.5f - lblSz * 0.5f, cardText, label);
+                    }
+                }
+
+                // Seats around the oval (rx=265, ry=115, 8 evenly spaced clockwise from top)
+                float seatRx = 260f, seatRy = 110f;
+                float seatW = 92f, seatH = 38f;
+
+                for (int si = 0; si < PokerEngine.MaxSeats; si++)
+                {
+                    double angle   = -Math.PI / 2.0 + si * 2.0 * Math.PI / PokerEngine.MaxSeats;
+                    float  sx      = center.X + (float)(Math.Cos(angle) * seatRx) - seatW * 0.5f;
+                    float  sy      = center.Y + (float)(Math.Sin(angle) * seatRy) - seatH * 0.5f;
+                    Vector2 sPos   = new Vector2(sx, sy);
+                    var seat       = poker.Seats[si];
+
+                    uint bgColor, borderColor;
+                    bool isCurrentTurn = inHand && table.PokerCurrentSeat == si && seat.IsActive;
+                    bool isDealer      = table.PokerDealerSeat == si && seat.IsOccupied;
+                    var  seatPlayer    = seat.IsOccupied ? engine.GetPlayer(seat.PlayerName) : null;
+                    bool seatIsAfk     = seatPlayer?.IsAfk ?? false;
+
+                    if (!seat.IsOccupied)
+                    {
+                        bgColor     = ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.12f, 0.12f, 0.85f));
+                        borderColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.3f,  0.3f,  0.3f,  1f));
+                    }
+                    else if (seat.IsFolded)
+                    {
+                        bgColor     = ImGui.ColorConvertFloat4ToU32(new Vector4(0.2f,  0.1f,  0.1f,  0.9f));
+                        borderColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f,  0.2f,  0.2f,  1f));
+                    }
+                    else if (seat.IsAllIn)
+                    {
+                        bgColor     = ImGui.ColorConvertFloat4ToU32(new Vector4(0.35f, 0.15f, 0.0f,  0.95f));
+                        borderColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f,    0.5f,  0.0f,  1f));
+                    }
+                    else if (seatIsAfk)
+                    {
+                        bgColor     = ImGui.ColorConvertFloat4ToU32(new Vector4(0.22f, 0.18f, 0.08f, 0.9f));
+                        borderColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.6f,  0.5f,  0.2f,  1f));
+                    }
+                    else if (isCurrentTurn)
+                    {
+                        bgColor     = ImGui.ColorConvertFloat4ToU32(new Vector4(0.1f,  0.35f, 0.1f,  0.95f));
+                        borderColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.2f,  1f,    0.2f,  1f));
+                    }
+                    else
+                    {
+                        bgColor     = ImGui.ColorConvertFloat4ToU32(new Vector4(0.15f, 0.15f, 0.25f, 0.9f));
+                        borderColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.4f,  0.4f,  0.7f,  1f));
+                    }
+
+                    drawList.AddRectFilled(sPos, sPos + new Vector2(seatW, seatH), bgColor, 4f);
+                    drawList.AddRect(sPos, sPos + new Vector2(seatW, seatH), borderColor, 4f, ImDrawFlags.None, isCurrentTurn ? 2f : 1f);
+
+                    if (!seat.IsOccupied)
+                    {
+                        string emptyLabel = $"Seat {si + 1}";
+                        var    eLblSz     = ImGui.CalcTextSize(emptyLabel);
+                        drawList.AddText(sPos + new Vector2(seatW, seatH) * 0.5f - eLblSz * 0.5f, textGray, emptyLabel);
+                    }
+                    else
+                    {
+                        // Role badge (D/SB/BB)
+                        string badge = "";
+                        if (table.PokerDealerSeat == si) badge = "D";
+                        else
+                        {
+                            int sbSeat = poker.NextOccupiedSeat(table.PokerDealerSeat);
+                            int bbSeat = sbSeat >= 0 ? poker.NextOccupiedSeat(sbSeat) : -1;
+                            if (si == sbSeat) badge = "SB";
+                            else if (si == bbSeat) badge = "BB";
+                        }
+
+                        // Name (trimmed)
+                        string displayName = seat.PlayerName.Length > 10
+                            ? seat.PlayerName[..10] + "…"
+                            : seat.PlayerName;
+                        var nameSz = ImGui.CalcTextSize(displayName);
+                        drawList.AddText(new Vector2(sPos.X + 4f, sPos.Y + 3f), textWhite, displayName);
+
+                        if (!string.IsNullOrEmpty(badge))
+                        {
+                            uint   badgeCol  = badge == "D"
+                                ? ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.84f, 0f, 1f))
+                                : ImGui.ColorConvertFloat4ToU32(new Vector4(0.4f, 0.8f, 1f, 1f));
+                            uint   badgeText = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 1f));
+                            Vector2 outDir      = new Vector2(MathF.Cos((float)angle), MathF.Sin((float)angle));
+                            Vector2 seatCenter  = sPos + new Vector2(seatW * 0.5f, seatH * 0.5f);
+                            float   edgeDist    = MathF.Abs(outDir.X) * seatW * 0.5f + MathF.Abs(outDir.Y) * seatH * 0.5f;
+                            Vector2 tokenCenter = seatCenter + outDir * (edgeDist + 15f);
+                                drawList.AddCircleFilled(tokenCenter, 13f, badgeCol);
+                                drawList.AddCircle(tokenCenter, 13f, badgeText, 0, 1.5f);
+                            var badgeSz = ImGui.CalcTextSize(badge);
+                            drawList.AddText(tokenCenter - badgeSz * 0.5f, badgeText, badge);
+                        }
+
+                        // Bet / status line
+                        string statusLine;
+                        if (seat.IsFolded) statusLine = "FOLDED";
+                        else if (seat.IsAllIn) statusLine = $"ALL IN {seat.TotalBet}G";
+                        else if (seat.Bet > 0) statusLine = $"Bet: {seat.Bet}G";
+                        else if (seatIsAfk) statusLine = "AFK";
+                        else
+                        {
+                            var p = engine.GetPlayer(seat.PlayerName);
+                            statusLine = p != null ? $"{p.Bank}G" : "";
+                        }
+                        uint stCol = seat.IsFolded ? textGray
+                                   : seat.IsAllIn  ? ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.5f, 0f, 1f))
+                                   : potColor;
+                        var stSz = ImGui.CalcTextSize(statusLine);
+                        drawList.AddText(new Vector2(sPos.X + 4f, sPos.Y + seatH - stSz.Y - 3f), stCol, statusLine);
+                    }
+                }
+
+                // Dummy invisible button to reserve canvas space
+                ImGui.Dummy(new Vector2(canvasW, canvasH));
+
+                ImGui.Separator();
+
+                // ── Turn timer bar ───────────────────────────────────────────────────────
+                if (inHand && table.PokerCurrentSeat >= 0 && poker.Seats[table.PokerCurrentSeat].IsActive)
+                {
+                    int    limit   = table.TurnTimeLimit;
+                    double elapsed = (DateTime.Now - table.PokerTurnStart).TotalSeconds;
+                    float  frac    = (float)Math.Clamp(1.0 - elapsed / limit, 0.0, 1.0);
+                    string curName = poker.Seats[table.PokerCurrentSeat].PlayerName;
+
+                    Vector4 timerCol = frac > 0.5f ? new Vector4(0.2f, 0.8f, 0.2f, 1f)
+                                     : frac > 0.25f ? new Vector4(0.9f, 0.7f, 0.0f, 1f)
+                                     :                new Vector4(1f,   0.2f, 0.2f, 1f);
+                    ImGui.PushStyleColor(ImGuiCol.PlotHistogram, timerCol);
+                    ImGui.ProgressBar(frac, new Vector2(-1, 18), $"{curName}'s turn — {Math.Max(0, (int)(limit - elapsed))}s");
+                    ImGui.PopStyleColor();
+                }
+
+                ImGui.Separator();
+
+                // ── Admin proxy action buttons ────────────────────────────────────────────
+                ImGui.TextColored(new Vector4(1f, 1f, 0f, 1f), "ADMIN ACTIONS");
+
+                if (!inHand)
+                {
+                    if (ImGui.Button("♠ DEAL HAND", new Vector2(120, 28)))
+                        poker.DealHand(out _);
+                    ImGui.SameLine();
+                    ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), "SB:");
+                    ImGui.SameLine();
+                    ImGui.SetNextItemWidth(60);
+                    int pokerSb = table.PokerSmallBlind;
+                    if (ImGui.DragInt("##pokerSB", ref pokerSb, 5f, 1, 5000))
+                        table.PokerSmallBlind = pokerSb;
+                    ImGui.SameLine();
+                    ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), $"/ BB: {table.PokerSmallBlind * 2}G  |  Players: {engine.CurrentTable.Players.Count}");
+                }
+                else
+                {
+                    int curSeat = table.PokerCurrentSeat;
+                    string curName = curSeat >= 0 && poker.Seats[curSeat].IsOccupied
+                        ? poker.Seats[curSeat].PlayerName : "—";
+                    ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), $"Acting: {curName}");
+
+                    ImGui.BeginDisabled(curSeat < 0 || !poker.Seats[curSeat].IsActive);
+
+                    if (ImGui.Button("FOLD",  new Vector2(60, 24))) poker.PlayerFold(curName, out _);
+                    ImGui.SameLine();
+                    if (ImGui.Button("CHECK", new Vector2(60, 24))) poker.PlayerCheck(curName, out _);
+                    ImGui.SameLine();
+                    if (ImGui.Button("CALL",  new Vector2(60, 24))) poker.PlayerCall(curName, out _);
+                    ImGui.SameLine();
+
+                    ImGui.SetNextItemWidth(80);
+                    ImGui.DragInt("##proxyRaise", ref pokerProxyRaiseAmt, 5, table.PokerSmallBlind * 2, table.MaxBet);
+                    ImGui.SameLine();
+                    if (ImGui.Button($"RAISE +{pokerProxyRaiseAmt}", new Vector2(100, 24)))
+                        poker.PlayerRaise(curName, pokerProxyRaiseAmt, out _);
+                    ImGui.SameLine();
+                    if (ImGui.Button("ALL IN", new Vector2(65, 24))) poker.PlayerAllIn(curName, out _);
+
+                    ImGui.EndDisabled();
+
+                    // AFK toggle — available regardless of whose turn it is
+                    var curActingPlayer = engine.GetPlayer(curName);
+                    if (curActingPlayer != null)
+                    {
+                        ImGui.SameLine();
+                        bool actingIsAfk = curActingPlayer.IsAfk;
+                        if (ImGui.Button(actingIsAfk ? "[AFK]##pokerafk" : "AFK##pokerafk", new Vector2(45, 24)))
+                            engine.ToggleAFK(curName);
+                    }
+                }
+
+                ImGui.Separator();
+                DrawPlayersManagementTab();
+            }
+
+            private void DrawAdminTab()
         {
             ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), "ADMIN CONTROLS");
 
@@ -1972,6 +2351,12 @@ namespace SamplePlugin
             {
                 engine.CurrentTable.TurnTimeLimit = timer;
             }
+
+            ImGui.Separator();
+
+            // Poker settings
+            ImGui.TextColored(new Vector4(0.5f, 1f, 1f, 1f), "POKER SETTINGS");
+            ImGui.Checkbox("Show player hole cards in player table##showPokerCards", ref _showPokerHoleCards);
 
             // Manual Dealer Actions (when in Manual mode)
             if (engine.Mode == DealerMode.Manual && engine.CurrentTable.GameState == Models.GameState.Playing)

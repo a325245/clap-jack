@@ -25,7 +25,7 @@ public class Table
     public List<Card> DealtCards { get; set; } = new();   // cards dealt from persistent deck
 
     public GameState GameState { get; set; } = GameState.Lobby;
-    public GameType GameType { get; set; } = GameType.Blackjack;
+    public GameType GameType { get; set; } = GameType.None;
 
     // Configurable message delay (milliseconds, shared by all engines)
     public int MessageDelayMs { get; set; } = 3000;
@@ -57,11 +57,22 @@ public class Table
     public Dictionary<string, BaccaratBet> BaccaratBets { get; set; } = new();
 
     // Chocobo Racing
-    public ChocoboRacePhase ChocoboRacePhase { get; set; } = ChocoboRacePhase.WaitingForBets;
+    public ChocoboRacePhase ChocoboRacePhase { get; set; } = ChocoboRacePhase.Idle;
     public DateTime         ChocoboRaceStart { get; set; }
     public Dictionary<string, ChocoboBet> ChocoboBets { get; set; } = new();
 
-    // Dealer rules and properties
+    // Texas Hold'Em
+    public PokerPhase   PokerPhase         { get; set; } = PokerPhase.WaitingForPlayers;
+    public int          PokerDealerSeat    { get; set; } = -1;
+    public int          PokerCurrentSeat   { get; set; } = -1;
+    public int          PokerPot           { get; set; } = 0;
+    public int          PokerStreetBet     { get; set; } = 0;
+    public int          PokerLastAggressor { get; set; } = -1;
+    public int          PokerSmallBlind    { get; set; } = 50;
+    public List<Card>   PokerCommunity     { get; set; } = new();
+    public DateTime     PokerTurnStart     { get; set; }
+
+    // Dealer rules
     public DealerRules DealerRules { get; set; } = DealerRules.HitsOnSoft17;
     public bool DealerHasBlackjack { get; set; } = false;
     public Card DealerHoleCard { get; set; } = default;
