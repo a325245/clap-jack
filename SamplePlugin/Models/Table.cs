@@ -33,6 +33,16 @@ public class Table
     // Announce when players are added to the table
     public bool AnnounceNewPlayers { get; set; } = true;
 
+    // Use only the player's first name in dealer announcements
+    public bool UseFirstNameOnly { get; set; } = true;
+
+    public string GetDisplayName(string fullName)
+    {
+        if (!UseFirstNameOnly || string.IsNullOrEmpty(fullName)) return fullName;
+        int space = fullName.IndexOf(' ');
+        return space > 0 ? fullName[..space] : fullName;
+    }
+
     // Roulette
     public int? RouletteResult { get; set; } = null;
     public RouletteSpinState RouletteSpinState { get; set; } = RouletteSpinState.Idle;
@@ -60,6 +70,8 @@ public class Table
     public ChocoboRacePhase ChocoboRacePhase { get; set; } = ChocoboRacePhase.Idle;
     public DateTime         ChocoboRaceStart { get; set; }
     public Dictionary<string, ChocoboBet> ChocoboBets { get; set; } = new();
+    public int ChocoboMinBet { get; set; } = 10;
+    public int ChocoboMaxBet { get; set; } = 10000;
 
     // Texas Hold'Em
     public PokerPhase   PokerPhase         { get; set; } = PokerPhase.WaitingForPlayers;
@@ -69,6 +81,7 @@ public class Table
     public int          PokerStreetBet     { get; set; } = 0;
     public int          PokerLastAggressor { get; set; } = -1;
     public int          PokerSmallBlind    { get; set; } = 50;
+    public int          PokerAnte          { get; set; } = 50;
     public List<Card>   PokerCommunity     { get; set; } = new();
     public DateTime     PokerTurnStart     { get; set; }
 

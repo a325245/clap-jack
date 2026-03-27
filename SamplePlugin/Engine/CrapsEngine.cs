@@ -45,6 +45,8 @@ public class CrapsEngine
         }
     }
 
+    private string DN(string name) => CurrentTable.GetDisplayName(name);
+
     // ── Shooter ────────────────────────────────────────────────────────────────
 
     public bool IsCurrentShooter(string playerName) =>
@@ -121,9 +123,9 @@ public class CrapsEngine
         if (player == null) { error = $"{playerName} is not at the table."; return false; }
 
         if (amount < CurrentTable.MinBet || amount > CurrentTable.MaxBet)
-        { error = $"Bet must be {CurrentTable.MinBet}–{CurrentTable.MaxBet}G."; return false; }
+        { error = $"Bet must be {CurrentTable.MinBet}–{CurrentTable.MaxBet}\uE049."; return false; }
 
-        if (player.Bank < amount) { error = $"Insufficient funds ({player.Bank}G)."; return false; }
+        if (player.Bank < amount) { error = $"Insufficient funds ({player.Bank}\uE049)."; return false; }
 
         string key = playerName.ToUpperInvariant();
         if (!CurrentTable.CrapsBets.TryGetValue(key, out var bets))
@@ -172,8 +174,8 @@ public class CrapsEngine
         player.Bank -= amount;
         player.IsAfk = false;
         string label = betType == "PLACE" ? $"Place {placeNumber}" : betType;
-        SendMessage($"{playerName} bets {amount}G on {label}.");
-        LogAction($"{playerName}: {label} {amount}G");
+        SendMessage($"{DN(playerName)} bets {amount}\uE049 on {label}.");
+        LogAction($"{playerName}: {label} {amount}\uE049");
         OnUIUpdate?.Invoke();
         return true;
     }
@@ -270,12 +272,12 @@ public class CrapsEngine
                 int payout = doublesPay ? bet * 2 : bet;
                 player.Bank += bet + payout;
                 player.CrapsNetGains += payout;
-                AddResult(kvp.Key, $"Field +{payout}G");
+                AddResult(kvp.Key, $"Field +{payout}\uE049");
             }
             else
             {
                 player.CrapsNetGains -= bet;
-                AddResult(kvp.Key, $"Field -{bet}G");
+                AddResult(kvp.Key, $"Field -{bet}\uE049");
             }
         }
     }
@@ -357,9 +359,9 @@ public class CrapsEngine
             if (bets.PassLineBet > 0)
             {
                 if (passWins)
-                { player.Bank += bets.PassLineBet * 2; player.CrapsNetGains += bets.PassLineBet; AddResult(kvp.Key, $"Pass +{bets.PassLineBet}G"); }
+                { player.Bank += bets.PassLineBet * 2; player.CrapsNetGains += bets.PassLineBet; AddResult(kvp.Key, $"Pass +{bets.PassLineBet}\uE049"); }
                 else
-                { player.CrapsNetGains -= bets.PassLineBet; AddResult(kvp.Key, $"Pass -{bets.PassLineBet}G"); }
+                { player.CrapsNetGains -= bets.PassLineBet; AddResult(kvp.Key, $"Pass -{bets.PassLineBet}\uE049"); }
             }
 
             if (bets.DontPassBet > 0)
@@ -367,9 +369,9 @@ public class CrapsEngine
                 if (dontPassPush)
                 { player.Bank += bets.DontPassBet; AddResult(kvp.Key, "DP push"); }
                 else if (!passWins)
-                { player.Bank += bets.DontPassBet * 2; player.CrapsNetGains += bets.DontPassBet; AddResult(kvp.Key, $"DP +{bets.DontPassBet}G"); }
+                { player.Bank += bets.DontPassBet * 2; player.CrapsNetGains += bets.DontPassBet; AddResult(kvp.Key, $"DP +{bets.DontPassBet}\uE049"); }
                 else
-                { player.CrapsNetGains -= bets.DontPassBet; AddResult(kvp.Key, $"DP -{bets.DontPassBet}G"); }
+                { player.CrapsNetGains -= bets.DontPassBet; AddResult(kvp.Key, $"DP -{bets.DontPassBet}\uE049"); }
             }
         }
     }
@@ -385,17 +387,17 @@ public class CrapsEngine
             if (bets.Big6Bet > 0)
             {
                 if (sevenOut)
-                { player.CrapsNetGains -= bets.Big6Bet; AddResult(kvp.Key, $"Big6 -{bets.Big6Bet}G"); bets.Big6Bet = 0; }
+                { player.CrapsNetGains -= bets.Big6Bet; AddResult(kvp.Key, $"Big6 -{bets.Big6Bet}\uE049"); bets.Big6Bet = 0; }
                 else if (rolledNumber == 6)
-                { player.Bank += bets.Big6Bet * 2; player.CrapsNetGains += bets.Big6Bet; AddResult(kvp.Key, $"Big6 +{bets.Big6Bet}G"); bets.Big6Bet = 0; }
+                { player.Bank += bets.Big6Bet * 2; player.CrapsNetGains += bets.Big6Bet; AddResult(kvp.Key, $"Big6 +{bets.Big6Bet}\uE049"); bets.Big6Bet = 0; }
             }
 
             if (bets.Big8Bet > 0)
             {
                 if (sevenOut)
-                { player.CrapsNetGains -= bets.Big8Bet; AddResult(kvp.Key, $"Big8 -{bets.Big8Bet}G"); bets.Big8Bet = 0; }
+                { player.CrapsNetGains -= bets.Big8Bet; AddResult(kvp.Key, $"Big8 -{bets.Big8Bet}\uE049"); bets.Big8Bet = 0; }
                 else if (rolledNumber == 8)
-                { player.Bank += bets.Big8Bet * 2; player.CrapsNetGains += bets.Big8Bet; AddResult(kvp.Key, $"Big8 +{bets.Big8Bet}G"); bets.Big8Bet = 0; }
+                { player.Bank += bets.Big8Bet * 2; player.CrapsNetGains += bets.Big8Bet; AddResult(kvp.Key, $"Big8 +{bets.Big8Bet}\uE049"); bets.Big8Bet = 0; }
             }
         }
     }
@@ -412,13 +414,13 @@ public class CrapsEngine
             {
                 int amt = bets.PlaceBets[num];
                 if (sevenOut)
-                { player.CrapsNetGains -= amt; AddResult(kvp.Key, $"Place{num} -{amt}G"); bets.PlaceBets.Remove(num); }
+                { player.CrapsNetGains -= amt; AddResult(kvp.Key, $"Place{num} -{amt}\uE049"); bets.PlaceBets.Remove(num); }
                 else if (rolledNumber == num)
                 {
                     int pay = GetPlacePayout(num, amt);
                     player.Bank += amt + pay;
                     player.CrapsNetGains += pay;
-                    AddResult(kvp.Key, $"Place{num} +{pay}G");
+                    AddResult(kvp.Key, $"Place{num} +{pay}\uE049");
                     bets.PlaceBets.Remove(num);
                 }
             }
@@ -445,7 +447,7 @@ public class CrapsEngine
         {
             var p = GetPlayerByKey(kvp.Key);
             if (p == null) continue;
-            QueueMessage($"{p.Name}: {string.Join(" | ", kvp.Value)} → Bank: {p.Bank}G");
+            QueueMessage($"{DN(p.Name)}: {string.Join(" | ", kvp.Value)} → Bank: {p.Bank}\uE049");
         }
     }
 
@@ -495,7 +497,7 @@ public class CrapsEngine
             if (refund > 0)
             {
                 player.Bank += refund;
-                QueueMessage($"{player.Name}: {refund}G refunded \u2192 Bank: {player.Bank}G");
+                QueueMessage($"{DN(player.Name)}: {refund}\uE049 refunded \u2192 Bank: {player.Bank}\uE049");
             }
         }
 

@@ -45,6 +45,8 @@ public class RouletteEngine
         }
     }
 
+    private string DN(string name) => CurrentTable.GetDisplayName(name);
+
     // ── Spin Logic ────────────────────────────────────────────────────────────
 
     public bool StartSpin(string dealerName, out string error)
@@ -116,14 +118,14 @@ public class RouletteEngine
                     int payout = bet.Payout();
                     won += payout;
                     int mult = bet.Type == "INSIDE" ? 36 : 2;
-                    betBreakdowns.Add($"{bet.Amount}G\u00d7{bet.Target}(\u00d7{mult})={payout}G");
+                    betBreakdowns.Add($"{bet.Amount}\uE049\u00d7{bet.Target}(\u00d7{mult})={payout}\uE049");
                 }
                 // misses are not reported
             }
 
             int totalRisked = player.RouletteBets.Sum(b => b.Amount);
             int net = won - totalRisked;
-            string netStr = net >= 0 ? $"+{net}G" : $"{net}G";
+            string netStr = net >= 0 ? $"+{net}\uE049" : $"{net}\uE049";
             string breakdown = string.Join(" | ", betBreakdowns);
             int bankStart = bankBefore + totalRisked; // what bank was before bets were placed
 
@@ -133,9 +135,9 @@ public class RouletteEngine
             player.RouletteNetGains += net;
             int bankNow = player.Bank;
 
-            resultLines.Add($"Payouts | {player.Name}: {breakdown} | net {netStr} | Bank: {bankStart}G \u2192 {bankNow}G");
+            resultLines.Add($"Payouts | {DN(player.Name)}: {breakdown} | net {netStr} | Bank: {bankStart}\uE049 \u2192 {bankNow}\uE049");
 
-            LogAction($"{player.Name}: won={won}G risked={totalRisked}G net={netStr} bank {bankStart}->{bankNow}");
+            LogAction($"{player.Name}: won={won}\uE049 risked={totalRisked}\uE049 net={netStr} bank {bankStart}->{bankNow}");
             player.RouletteBets.Clear();
         }
 
@@ -196,7 +198,7 @@ public class RouletteEngine
 
         if (player.Bank < totalCost)
         {
-            error = $"Insufficient funds. Need {totalCost}G, have {player.Bank}G.";
+            error = $"Insufficient funds. Need {totalCost}\uE049, have {player.Bank}\uE049.";
             return false;
         }
 
@@ -211,8 +213,8 @@ public class RouletteEngine
             player.RouletteBets.Add(new RouletteBet { Type = "INSIDE", Target = t, Amount = amount });
 
         var allTargets = outsideTargets.Concat(insideTargets);
-        SendMessage($"{playerName} risks {totalCost}G on {string.Join(", ", allTargets)}.");
-        LogAction($"{playerName} bet {totalCost}G on {string.Join(", ", allTargets)}");
+        SendMessage($"{playerName} risks {totalCost}\uE049 on {string.Join(", ", allTargets)}.");
+        LogAction($"{playerName} bet {totalCost}\uE049 on {string.Join(", ", allTargets)}");
         OnUIUpdate?.Invoke();
         return true;
     }
@@ -227,7 +229,7 @@ public class RouletteEngine
         player.Bank += refund;
         player.RouletteBets.Clear();
 
-        SendMessage($"{playerName} bets cleared. {refund}G refunded.");
+        SendMessage($"{playerName} bets cleared. {refund}\uE049 refunded.");
         OnUIUpdate?.Invoke();
     }
 
@@ -255,7 +257,7 @@ public class RouletteEngine
             if (refund > 0)
             {
                 player.Bank += refund;
-                QueueMessage($"{player.Name}: {refund}G refunded \u2192 Bank: {player.Bank}G");
+                QueueMessage($"{player.Name}: {refund}\uE049 refunded \u2192 Bank: {player.Bank}\uE049");
             }
             player.RouletteBets.Clear();
         }

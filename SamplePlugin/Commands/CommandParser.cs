@@ -32,9 +32,25 @@ public class CommandParser
         this.pokerEngine = pokerEngine;
     }
 
+    // Commands that are valid with no arguments — accepted even when the player forgets the ">"
+    private static readonly HashSet<string> KnownSingleWordCommands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "HIT", "STAND", "DOUBLE", "SPLIT", "INSURANCE",
+        "FOLD", "CHECK", "CALL", "ROLL", "TABLE",
+        "HELP", "RULES", "AFK"
+    };
+
     public void Parse(string senderName, string text, string adminName, DealerMode mode, ChatChannel sourceChannel)
     {
-        if (!text.StartsWith(">")) return;
+        if (text.StartsWith("bet ", StringComparison.OrdinalIgnoreCase))
+            text = ">" + text;
+
+        if (!text.StartsWith(">"))
+        {
+            string trimmed = text.Trim();
+            if (trimmed.Contains(' ') || !KnownSingleWordCommands.Contains(trimmed)) return;
+            text = ">" + trimmed;
+        }
 
         var parts = text.Substring(1).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0) return;
@@ -96,6 +112,9 @@ public class CommandParser
                         if (!pokerEngine.PlayerAllIn(playerName, out string aiErr))
                             SendResponse(aiErr, sourceChannel);
                     }
+                    return;
+                case "TABLE":
+                    pokerEngine.AnnounceTable();
                     return;
             }
         }
@@ -381,12 +400,12 @@ public class CommandParser
     {
         return table.GameType switch
         {
-            GameType.Craps         => $"[CRAPS RULES] Come-out: 7/11=Natural (Pass wins, DP loses). 2/3=Craps (DP wins, Pass loses). 12=Pass loses, DP push. 4-10 sets the POINT. Point round: roll Point=Pass wins; 7-out=DP wins, Pass/Place/Big6/Big8 lose. FIELD: 2/12 pay 2:1, 3/4/9/10/11=1:1, 5/6/7/8=lose. BIG 6/8: pays 1:1 before 7. PLACE: 4/10=9:5, 5/9=7:5, 6/8=7:6. Limits: {table.MinBet}-{table.MaxBet}G.",
-            GameType.Baccarat      => $"[BACCARAT RULES] Closest to 9 wins. Ace=1, 2-9=face, 10/J/Q/K=0. Score=sum mod 10. Natural: 8 or 9 on first two cards ends the round. Player draws on 0-5, stands 6-7. Banker follows standard third-card rules. Payouts: Player 1:1, Banker 1:1, Tie 8:1. Limits: {table.MinBet}-{table.MaxBet}G.",
-            GameType.Roulette      => $"[ROULETTE RULES] Wheel has 37 slots (0-36). 0=green, others alternate red/black. Straight numbers pay 35:1. RED/BLACK, EVEN/ODD, 1-18/19-36 pay 1:1. 1ST/2ND/3RD dozen pay 2:1. COL1/COL2/COL3 pay 2:1. Limits: {table.MinBet}-{table.MaxBet}G.",
-            GameType.ChocoboRacing => $"[CHOCOBO RULES] 8 racers run a 30-second race. Each has Speed (early), Endurance (late), and X-Factor (randomness). Winning bet pays your stake × the racer's odds. Limits: {table.MinBet}-{table.MaxBet}G.",
-            GameType.TexasHoldEm  => $"[POKER RULES] Texas Hold'Em. Each player gets 2 hole cards + 5 community cards over 4 betting rounds (Pre-Flop, Flop, Turn, River). Best 5-card hand wins the pot. SB={table.PokerSmallBlind}G, BB={table.PokerSmallBlind * 2}G. Hands: Royal Flush > Straight Flush > 4-of-a-kind > Full House > Flush > Straight > 3-of-a-kind > Two Pair > Pair > High Card.",
-            _                      => $"[BLACKJACK RULES] Beat the dealer without exceeding 21. Ace=1 or 11, face cards=10. Blackjack (Ace+10) pays 1.5x bet. Dealer hits on soft 16 or less. Split matching pairs into two hands. Double Down: double your bet, receive exactly one more card. Insurance: when dealer shows Ace, pays 2:1 if dealer has Blackjack. Limits: {table.MinBet}-{table.MaxBet}G."
+            GameType.Craps         => $"[CRAPS RULES] Come-out: 7/11=Natural (Pass wins, DP loses). 2/3=Craps (DP wins, Pass loses). 12=Pass loses, DP push. 4-10 sets the POINT. Point round: roll Point=Pass wins; 7-out=DP wins, Pass/Place/Big6/Big8 lose. FIELD: 2/12 pay 2:1, 3/4/9/10/11=1:1, 5/6/7/8=lose. BIG 6/8: pays 1:1 before 7. PLACE: 4/10=9:5, 5/9=7:5, 6/8=7:6. Limits: {table.MinBet}-{table.MaxBet}\uE049.",
+            GameType.Baccarat      => $"[BACCARAT RULES] Closest to 9 wins. Ace=1, 2-9=face, 10/J/Q/K=0. Score=sum mod 10. Natural: 8 or 9 on first two cards ends the round. Player draws on 0-5, stands 6-7. Banker follows standard third-card rules. Payouts: Player 1:1, Banker 1:1, Tie 8:1. Limits: {table.MinBet}-{table.MaxBet}\uE049.",
+            GameType.Roulette      => $"[ROULETTE RULES] Wheel has 37 slots (0-36). 0=green, others alternate red/black. Straight numbers pay 35:1. RED/BLACK, EVEN/ODD, 1-18/19-36 pay 1:1. 1ST/2ND/3RD dozen pay 2:1. COL1/COL2/COL3 pay 2:1. Limits: {table.MinBet}-{table.MaxBet}\uE049.",
+            GameType.ChocoboRacing => $"[CHOCOBO RULES] 8 racers run a 30-second race. Each has Speed (early), Endurance (late), and X-Factor (randomness). Winning bet pays your stake × the racer's odds. Limits: {table.ChocoboMinBet}-{table.ChocoboMaxBet}\uE049.",
+            GameType.TexasHoldEm  => $"[POKER RULES] Texas Hold'Em. Each player gets 2 hole cards + 5 community cards over 4 betting rounds (Pre-Flop, Flop, Turn, River). Best 5-card hand wins the pot. SB={table.PokerSmallBlind}\uE049, BB={table.PokerSmallBlind * 2}\uE049. Hands: Royal Flush > Straight Flush > 4-of-a-kind > Full House > Flush > Straight > 3-of-a-kind > Two Pair > Pair > High Card.",
+            _                      => $"[BLACKJACK RULES] Beat the dealer without exceeding 21. Ace=1 or 11, face cards=10. Blackjack (Ace+10) pays 1.5x bet. Dealer hits on soft 16 or less. Split matching pairs into two hands. Double Down: double your bet, receive exactly one more card. Insurance: when dealer shows Ace, pays 2:1 if dealer has Blackjack. Limits: {table.MinBet}-{table.MaxBet}\uE049."
         };
     }
 

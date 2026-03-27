@@ -35,20 +35,6 @@ namespace SamplePlugin
                 DebugChatLog.Dequeue();
         }
 
-        // Old UI state (keeping for other tabs)
-        private string playerAddName = string.Empty;
-        private string playerRemoveName = string.Empty;
-        private string playerBankName = string.Empty;
-        private string playerBankAmount = string.Empty;
-        private string playerSetBankAmount = string.Empty;
-        private string playerBetAmount = string.Empty;
-        private string playerRenameOld = string.Empty;
-        private string playerRenameNew = string.Empty;
-        private string playerServerName = string.Empty;
-        private string playerServerValue = string.Empty;
-        private string kickPlayerName = string.Empty;
-        private string afkPlayerName = string.Empty;
-        private string simulatePlayerName = string.Empty;
         private bool _showPokerHoleCards = true;
 
         public PluginUI(Plugin plugin, BlackjackEngine engine)
@@ -77,31 +63,31 @@ namespace SamplePlugin
 
                 if (ImGui.BeginTabBar("##maintabs"))
                 {
-                    if (ImGui.BeginTabItem("🎮 Table##tab1"))
+                    if (ImGui.BeginTabItem("Table##tab1"))
                     {
                         DrawTableTab();
                         ImGui.EndTabItem();
                     }
 
-                    if (ImGui.BeginTabItem("📊 Statistics##tab2"))
+                    if (ImGui.BeginTabItem("Statistics##tab2"))
                     {
                         DrawStatisticsTab();
                         ImGui.EndTabItem();
                     }
 
-                    if (ImGui.BeginTabItem("📋 Game Log##tab3"))
+                    if (ImGui.BeginTabItem("Game Log##tab3"))
                     {
                         DrawLogTab();
                         ImGui.EndTabItem();
                     }
 
-                    if (ImGui.BeginTabItem("⚙️ Admin##tab4"))
+                    if (ImGui.BeginTabItem("Admin##tab4"))
                     {
                         DrawAdminTab();
                         ImGui.EndTabItem();
                     }
 
-                    if (ImGui.BeginTabItem("🔍 Chat Debug##tab5"))
+                    if (ImGui.BeginTabItem("Chat Debug##tab5"))
                     {
                         DrawChatDebugTab();
                         ImGui.EndTabItem();
@@ -116,7 +102,7 @@ namespace SamplePlugin
 
         private void DrawTableTab()
         {
-            ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), "🎮 BLACKJACK TABLE");
+            ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), "BLACKJACK TABLE");
 
             ImGui.Separator();
 
@@ -193,7 +179,6 @@ namespace SamplePlugin
 
         private string rouletteTargetInput = string.Empty;
         private int rouletteBetAmount = 50;
-        private string rouletteProxyPlayer = string.Empty;
         private int rouletteSelectedPlayerIdx = 0;
 
         private static readonly int[] RedNumbers = { 1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36 };
@@ -238,7 +223,7 @@ namespace SamplePlugin
             }
             else if (table.RouletteSpinState == Models.RouletteSpinState.Resolving)
             {
-                ImGui.TextColored(new Vector4(0, 1, 0.5f, 1), "✅  Resolving payouts...");
+                ImGui.TextColored(new Vector4(0, 1, 0.5f, 1), "Resolving payouts...");
             }
 
             ImGui.Separator();
@@ -304,7 +289,7 @@ namespace SamplePlugin
 
                     // Bank
                     ImGui.TableSetColumnIndex(1);
-                    ImGui.Text($"{player.Bank}G");
+                    ImGui.Text($"{player.Bank}\uE049");
 
                     // Bets list
                     ImGui.TableSetColumnIndex(2);
@@ -319,7 +304,7 @@ namespace SamplePlugin
                             uint col = b.Target == "RED"   ? 0xFF3333FF :
                                        b.Target == "BLACK" ? 0xFFAAAAAA :
                                                              0xFF55FF55;
-                            return $"[{b.Target}:{b.Amount}G]";
+                            return $"[{b.Target}:{b.Amount}\uE049]";
                         }));
                         ImGui.TextUnformatted(betStr);
                     }
@@ -328,7 +313,7 @@ namespace SamplePlugin
                     ImGui.TableSetColumnIndex(3);
                     int risk = player.RouletteBets.Sum(b => b.Amount);
                     if (risk > 0)
-                        ImGui.TextColored(new Vector4(1,0.7f,0,1), $"{risk}G");
+                        ImGui.TextColored(new Vector4(1,0.7f,0,1), $"{risk}\uE049");
                     else
                         ImGui.TextColored(new Vector4(0.4f,0.4f,0.4f,1), "-");
                 }
@@ -506,8 +491,7 @@ namespace SamplePlugin
         // ── CRAPS UI ─────────────────────────────────────────────────────────────
 
         private int crapsProxyBetAmt = 50;
-        private string crapsProxyPlayer = string.Empty;
-        private int crapsProxyBetType = 0;      // 0=PASS 1=DONTPASS 2=FIELD 3=BIG6 4=BIG8 5=PLACE
+        private int crapsProxyBetType = 0;
         private int crapsSelectedPlayerIdx = 0;
         private int crapsPlaceNumberIdx = 0;
 
@@ -524,12 +508,12 @@ namespace SamplePlugin
             // ── Phase / shooter / timer banner ───────────────────────────────────
             string shooter = string.IsNullOrEmpty(table.CrapsShooterName) ? "?" : table.CrapsShooterName;
             if (table.CrapsPhase == Models.CrapsPhase.PointEstablished)
-                ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), $"⬛ POINT: {table.CrapsPoint} — Roll {table.CrapsPoint} to win or 7-out");
+                ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), $"POINT: {table.CrapsPoint} — Roll {table.CrapsPoint} to win or 7-out");
             else
-                ImGui.TextColored(new Vector4(0.5f, 1, 0.5f, 1), "🎯 COME-OUT — Pass/Don't Pass bets open");
+                ImGui.TextColored(new Vector4(0.5f, 1, 0.5f, 1), "COME-OUT — Pass/Don't Pass bets open");
 
             ImGui.SameLine(300);
-            ImGui.TextColored(new Vector4(0.5f, 1, 1, 1), $"🎲 Shooter: {shooter}");
+            ImGui.TextColored(new Vector4(0.5f, 1, 1, 1), $"Shooter: {shooter}");
 
             if (table.CrapsBettingPhase && !table.CrapsRolling)
             {
@@ -570,7 +554,7 @@ namespace SamplePlugin
             ImGui.Separator();
 
             // ── Rules ────────────────────────────────────────────────────────────
-            if (ImGui.CollapsingHeader("📖 Craps Rules (summary)"))
+            if (ImGui.CollapsingHeader("Craps Rules (summary)"))
             {
                 ImGui.TextWrapped("COME-OUT: 7/11=Natural (Pass wins, DP loses). 2/3=Craps (DP wins, Pass loses). 12=Pass loses, DP push. 4-10 sets the POINT.");
                 ImGui.TextWrapped("POINT ROUND: Roll Point=Pass wins & carry-over bets paid. 7-out=DP wins, Pass/Place/Big6/Big8 lose.");
@@ -648,34 +632,34 @@ namespace SamplePlugin
                     ImGui.TableSetColumnIndex(0);
                     ImGui.Text(player.IsAfk ? $"{player.Name} (AFK)" : player.Name);
                     ImGui.TableSetColumnIndex(1);
-                    ImGui.Text($"{player.Bank}G");
+                    ImGui.Text($"{player.Bank}\uE049");
 
                     string pk = player.Name.ToUpperInvariant();
                     table.CrapsBets.TryGetValue(pk, out var pb);
 
                     ImGui.TableSetColumnIndex(2);
-                    if (pb != null && pb.PassLineBet > 0) ImGui.TextColored(new Vector4(0, 1, 0.5f, 1), $"{pb.PassLineBet}G");
+                    if (pb != null && pb.PassLineBet > 0) ImGui.TextColored(new Vector4(0, 1, 0.5f, 1), $"{pb.PassLineBet}\uE049");
                     else ImGui.TextColored(new Vector4(0.4f, 0.4f, 0.4f, 1), "-");
 
                     ImGui.TableSetColumnIndex(3);
-                    if (pb != null && pb.DontPassBet > 0) ImGui.TextColored(new Vector4(1, 0.5f, 0, 1), $"{pb.DontPassBet}G");
+                    if (pb != null && pb.DontPassBet > 0) ImGui.TextColored(new Vector4(1, 0.5f, 0, 1), $"{pb.DontPassBet}\uE049");
                     else ImGui.TextColored(new Vector4(0.4f, 0.4f, 0.4f, 1), "-");
 
                     ImGui.TableSetColumnIndex(4);
-                    if (pb != null && pb.FieldBet > 0) ImGui.TextColored(new Vector4(0.8f, 0.8f, 0, 1), $"{pb.FieldBet}G");
+                    if (pb != null && pb.FieldBet > 0) ImGui.TextColored(new Vector4(0.8f, 0.8f, 0, 1), $"{pb.FieldBet}\uE049");
                     else ImGui.TextColored(new Vector4(0.4f, 0.4f, 0.4f, 1), "-");
 
                     ImGui.TableSetColumnIndex(5);
                     string bigStr = "";
-                    if (pb != null && pb.Big6Bet > 0) bigStr += $"6:{pb.Big6Bet}G ";
-                    if (pb != null && pb.Big8Bet > 0) bigStr += $"8:{pb.Big8Bet}G";
+                    if (pb != null && pb.Big6Bet > 0) bigStr += $"6:{pb.Big6Bet}\uE049 ";
+                    if (pb != null && pb.Big8Bet > 0) bigStr += $"8:{pb.Big8Bet}\uE049";
                     if (!string.IsNullOrEmpty(bigStr)) ImGui.TextColored(new Vector4(0.4f, 0.8f, 1, 1), bigStr.Trim());
                     else ImGui.TextColored(new Vector4(0.4f, 0.4f, 0.4f, 1), "-");
 
                     ImGui.TableSetColumnIndex(6);
                     if (pb != null && pb.PlaceBets.Count > 0)
                     {
-                        string placeStr = string.Join(" ", pb.PlaceBets.Select(kv => $"{kv.Key}:{kv.Value}G"));
+                        string placeStr = string.Join(" ", pb.PlaceBets.Select(kv => $"{kv.Key}:{kv.Value}\uE049"));
                         ImGui.TextColored(new Vector4(0.9f, 0.6f, 1, 1), placeStr);
                     }
                     else ImGui.TextColored(new Vector4(0.4f, 0.4f, 0.4f, 1), "-");
@@ -683,7 +667,7 @@ namespace SamplePlugin
                     ImGui.TableSetColumnIndex(7);
                     int net = player.CrapsNetGains;
                     Vector4 netCol = net > 0 ? new Vector4(0, 1, 0, 1) : net < 0 ? new Vector4(1, 0.4f, 0.4f, 1) : new Vector4(0.6f, 0.6f, 0.6f, 1);
-                    ImGui.TextColored(netCol, net >= 0 ? $"+{net}G" : $"{net}G");
+                    ImGui.TextColored(netCol, net >= 0 ? $"+{net}\uE049" : $"{net}\uE049");
                 }
                 ImGui.EndTable();
             }
@@ -844,7 +828,6 @@ namespace SamplePlugin
         // ── BACCARAT UI ───────────────────────────────────────────────────────────
 
         private int bacProxyBetAmt = 50;
-        private string bacProxyPlayer = string.Empty;
         private int bacSelectedPlayerIdx = 0;
         private int bacProxyBetType = 0; // 0=PLAYER 1=BANKER 2=TIE
 
@@ -856,7 +839,7 @@ namespace SamplePlugin
             // Phase banner
             bool inRound = table.BaccaratPhase != Models.BaccaratPhase.WaitingForBets;
             ImGui.TextColored(new Vector4(1, 0.84f, 0, 1),
-                inRound ? "🃏 Round in progress..." : "🃏 MINI BACCARAT — Place bets then Deal!");
+                inRound ? "Round in progress..." : "MINI BACCARAT — Place bets then Deal!");
 
             ImGui.Separator();
 
@@ -874,20 +857,20 @@ namespace SamplePlugin
             // ── Deal button ─────────────────────────────────────────────────────
             if (!inRound)
             {
-                if (ImGui.Button("🃏  DEAL  ", new Vector2(120, 36)))
+                if (ImGui.Button("DEAL  ", new Vector2(120, 36)))
                     bac.Deal(out _);
                 ImGui.SameLine();
                 ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1), "Place bets first.");
             }
             else
             {
-                ImGui.TextColored(new Vector4(1, 0.8f, 0, 1), "🃏  Dealing...");
+                ImGui.TextColored(new Vector4(1, 0.8f, 0, 1), "Dealing...");
             }
 
             ImGui.Separator();
 
             // ── Summarized rules ────────────────────────────────────────────────
-            if (ImGui.CollapsingHeader("📖 Baccarat Rules (summary)"))
+            if (ImGui.CollapsingHeader("Baccarat Rules (summary)"))
             {
                 ImGui.TextWrapped("OBJECTIVE: Bet on which hand — Player or Banker — will be closest to 9, or bet on a Tie.");
                 ImGui.Spacing();
@@ -950,26 +933,26 @@ namespace SamplePlugin
                     ImGui.TableSetColumnIndex(0);
                     ImGui.Text(player.IsAfk ? $"{player.Name} (AFK)" : player.Name);
                     ImGui.TableSetColumnIndex(1);
-                    ImGui.Text($"{player.Bank}G");
+                    ImGui.Text($"{player.Bank}\uE049");
 
                     string pk = player.Name.ToUpperInvariant();
                     table.BaccaratBets.TryGetValue(pk, out var bb);
 
                     ImGui.TableSetColumnIndex(2);
                     if (bb != null && bb.PlayerBet > 0)
-                        ImGui.TextColored(new Vector4(0.4f, 0.8f, 1, 1), $"{bb.PlayerBet}G");
+                        ImGui.TextColored(new Vector4(0.4f, 0.8f, 1, 1), $"{bb.PlayerBet}\uE049");
                     else
                         ImGui.TextColored(new Vector4(0.4f, 0.4f, 0.4f, 1), "-");
 
                     ImGui.TableSetColumnIndex(3);
                     if (bb != null && bb.BankerBet > 0)
-                        ImGui.TextColored(new Vector4(1, 0.5f, 0.2f, 1), $"{bb.BankerBet}G");
+                        ImGui.TextColored(new Vector4(1, 0.5f, 0.2f, 1), $"{bb.BankerBet}\uE049");
                     else
                         ImGui.TextColored(new Vector4(0.4f, 0.4f, 0.4f, 1), "-");
 
                     ImGui.TableSetColumnIndex(4);
                     if (bb != null && bb.TieBet > 0)
-                        ImGui.TextColored(new Vector4(0.4f, 1, 0.4f, 1), $"{bb.TieBet}G");
+                        ImGui.TextColored(new Vector4(0.4f, 1, 0.4f, 1), $"{bb.TieBet}\uE049");
                     else
                         ImGui.TextColored(new Vector4(0.4f, 0.4f, 0.4f, 1), "-");
                 }
@@ -1026,20 +1009,20 @@ namespace SamplePlugin
             // Big action buttons
             if (engine.CurrentTable.GameState == Models.GameState.Lobby)
             {
-                if (ImGui.Button("🎴 DEAL CARDS", new Vector2(200, 50)))
+                if (ImGui.Button("DEAL CARDS", new Vector2(200, 50)))
                 {
                     engine.StartGame();
                 }
                 ImGui.SameLine();
-                if (ImGui.Button("↶ UNDO", new Vector2(100, 50)))
+                if (ImGui.Button("UNDO", new Vector2(100, 50)))
                 {
                     engine.Undo();
                 }
             }
             else
             {
-                ImGui.TextColored(new Vector4(1, 1, 0, 1f), "🎮 Game in Progress...");
-                if (ImGui.Button("🛑 Reset to Lobby", new Vector2(150, 30)))
+                ImGui.TextColored(new Vector4(1, 1, 0, 1f), "Game in Progress...");
+                if (ImGui.Button("Reset to Lobby", new Vector2(150, 30)))
                 {
                     engine.CurrentTable.GameState = Models.GameState.Lobby;
                     foreach (var player in engine.CurrentTable.Players.Values)
@@ -1134,9 +1117,9 @@ namespace SamplePlugin
 
         private void DrawGameStatusHeader()
         {
-            ImGui.Text($"🎯 State: {engine.CurrentTable.GameState}");
+            ImGui.Text($"State: {engine.CurrentTable.GameState}");
             ImGui.SameLine(200);
-            ImGui.Text($"🤖 Mode: {engine.Mode}");
+            ImGui.Text($"Mode: {engine.Mode}");
             ImGui.SameLine(350);
             if (engine.CurrentTable.GameState == Models.GameState.Playing)
             {
@@ -1144,7 +1127,7 @@ namespace SamplePlugin
             }
             else
             {
-                ImGui.Text($"⏱️ Timer: {engine.CurrentTable.TurnTimeLimit}s");
+                ImGui.Text($"⏱Timer: {engine.CurrentTable.TurnTimeLimit}s");
             }
 
             // Current turn info
@@ -1152,13 +1135,13 @@ namespace SamplePlugin
                 engine.CurrentTable.CurrentTurnIndex < engine.CurrentTable.TurnOrder.Count)
             {
                 var currentPlayer = engine.CurrentTable.TurnOrder[engine.CurrentTable.CurrentTurnIndex];
-                ImGui.TextColored(new Vector4(0, 1, 0, 1), $"🎮 Current Turn: {currentPlayer}");
+                ImGui.TextColored(new Vector4(0, 1, 0, 1), $"Current Turn: {currentPlayer}");
             }
         }
 
         private void DrawDealerSection()
         {
-            ImGui.TextColored(new Vector4(1, 0.5f, 0, 1f), "🎴 DEALER");
+            ImGui.TextColored(new Vector4(1, 0.5f, 0, 1f), "DEALER");
 
             if (engine.CurrentTable.DealerHand.Count > 0)
             {
@@ -1258,37 +1241,18 @@ namespace SamplePlugin
             }
         }
 
-        private void DrawQuickSettings()
-        {
-            ImGui.TextColored(new Vector4(0.5f, 1f, 1f, 1f), "QUICK SETTINGS");
-
-            ImGui.Text("Mode:");
-            ImGui.SameLine();
-            if (ImGui.Button(engine.Mode == DealerMode.Auto ? "🤖 Auto" : "✋ Manual", new Vector2(100, 0)))
-            {
-                engine.Mode = engine.Mode == DealerMode.Auto ? DealerMode.Manual : DealerMode.Auto;
-            }
-
-            ImGui.Text($"Limits: {engine.CurrentTable.MinBet} - {engine.CurrentTable.MaxBet}");
-            ImGui.SameLine();
-            if (ImGui.Button("⚙️ Adjust", new Vector2(80, 0)))
-            {
-                // Could open a popup for limit adjustment
-            }
-        }
-
         private void DrawPlayersManagementTab()
         {
-            ImGui.TextColored(new Vector4(0.2f, 1f, 0.8f, 1f), "👥 PLAYER MANAGEMENT");
+            ImGui.TextColored(new Vector4(0.2f, 1f, 0.8f, 1f), "PLAYER MANAGEMENT");
 
             // Quick Add Section
             ImGui.Separator();
-            ImGui.TextColored(new Vector4(1, 1, 0.5f, 1f), "➕ ADD PLAYERS");
+            ImGui.TextColored(new Vector4(1, 1, 0.5f, 1f), "ADD PLAYERS");
 
             ImGui.SetNextItemWidth(200);
             ImGui.InputTextWithHint("##quickAdd", "Player Name or Name@Server", ref quickAddPlayerName, 100);
             ImGui.SameLine();
-            if (ImGui.Button("➕ Add Player", new Vector2(100, 0)))
+            if (ImGui.Button("Add Player", new Vector2(100, 0)))
             {
                 if (!string.IsNullOrWhiteSpace(quickAddPlayerName))
                 {
@@ -1297,7 +1261,7 @@ namespace SamplePlugin
                 }
             }
             ImGui.SameLine();
-            if (ImGui.Button("🎯 Add Target", new Vector2(100, 0)))
+            if (ImGui.Button("Add Target", new Vector2(100, 0)))
             {
                 // TODO: Add current target functionality
                 ImGui.OpenPopup("TargetNotImplemented");
@@ -1320,7 +1284,7 @@ namespace SamplePlugin
                 return;
             }
 
-            ImGui.TextColored(new Vector4(1, 1, 0.5f, 1f), $"📋 PLAYERS TABLE ({engine.CurrentTable.Players.Count} players)");
+            ImGui.TextColored(new Vector4(1, 1, 0.5f, 1f), $"PLAYERS TABLE ({engine.CurrentTable.Players.Count} players)");
 
             var gameType    = engine.CurrentTable.GameType;
             bool isRoulette  = gameType == Models.GameType.Roulette;
@@ -1339,12 +1303,12 @@ namespace SamplePlugin
             if (ImGui.BeginTable("PlayersTable", colCount, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Resizable))
             {
                 // Table Headers
-                ImGui.TableSetupColumn("👤 Name",   ImGuiTableColumnFlags.WidthFixed, 120);
-                ImGui.TableSetupColumn("🌐 Server", ImGuiTableColumnFlags.WidthFixed, 80);
-                ImGui.TableSetupColumn("💰 Bank",   ImGuiTableColumnFlags.WidthFixed, 80);
+                ImGui.TableSetupColumn("Name",   ImGuiTableColumnFlags.WidthFixed, 120);
+                ImGui.TableSetupColumn("Server", ImGuiTableColumnFlags.WidthFixed, 80);
+                ImGui.TableSetupColumn("Bank",   ImGuiTableColumnFlags.WidthFixed, 80);
                 if (showBetCol)
-                    ImGui.TableSetupColumn("🎰 Bet", ImGuiTableColumnFlags.WidthFixed, 70);
-                ImGui.TableSetupColumn("💤 AFK", ImGuiTableColumnFlags.WidthFixed, 50);
+                    ImGui.TableSetupColumn("Bet", ImGuiTableColumnFlags.WidthFixed, 70);
+                ImGui.TableSetupColumn("AFK", ImGuiTableColumnFlags.WidthFixed, 50);
                 string statsLabel = gameType switch
                 {
                     Models.GameType.Roulette      => "📊 R.Net",
@@ -1357,10 +1321,10 @@ namespace SamplePlugin
                 ImGui.TableSetupColumn(statsLabel, ImGuiTableColumnFlags.WidthFixed, 100);
                 if (showCardsCol)
                     ImGui.TableSetupColumn(
-                        showPokerCards ? "🂠 Hole Cards" : "🎴 Cards",
+                        showPokerCards ? "Hole Cards" : "Cards",
                         ImGuiTableColumnFlags.WidthFixed,
                         showPokerCards ? 90 : 300);
-                ImGui.TableSetupColumn("🔧 Actions", ImGuiTableColumnFlags.WidthFixed, 160);
+                ImGui.TableSetupColumn("Actions", ImGuiTableColumnFlags.WidthFixed, 160);
                 ImGui.TableHeadersRow();
 
                 var players = engine.CurrentTable.Players.Values.ToList();
@@ -1514,35 +1478,35 @@ namespace SamplePlugin
                         {
                             int net = player.RouletteNetGains;
                             Vector4 nc = net > 0 ? new Vector4(0, 1, 0, 1f) : net < 0 ? new Vector4(1, 0.4f, 0.4f, 1f) : new Vector4(0.7f, 0.7f, 0.7f, 1f);
-                            ImGui.TextColored(nc, net >= 0 ? $"+{net}G" : $"{net}G");
+                            ImGui.TextColored(nc, net >= 0 ? $"+{net}\uE049" : $"{net}\uE049");
                             break;
                         }
                         case Models.GameType.Craps:
                         {
                             int net = player.CrapsNetGains;
                             Vector4 nc = net > 0 ? new Vector4(0, 1, 0, 1f) : net < 0 ? new Vector4(1, 0.4f, 0.4f, 1f) : new Vector4(0.7f, 0.7f, 0.7f, 1f);
-                            ImGui.TextColored(nc, net >= 0 ? $"+{net}G" : $"{net}G");
+                            ImGui.TextColored(nc, net >= 0 ? $"+{net}\uE049" : $"{net}\uE049");
                             break;
                         }
                         case Models.GameType.Baccarat:
                         {
                             int net = player.BaccaratNetGains;
                             Vector4 nc = net > 0 ? new Vector4(0, 1, 0, 1f) : net < 0 ? new Vector4(1, 0.4f, 0.4f, 1f) : new Vector4(0.7f, 0.7f, 0.7f, 1f);
-                            ImGui.TextColored(nc, net >= 0 ? $"+{net}G" : $"{net}G");
+                            ImGui.TextColored(nc, net >= 0 ? $"+{net}\uE049" : $"{net}\uE049");
                             break;
                         }
                         case Models.GameType.ChocoboRacing:
                         {
                             int net = player.ChocoboNetGains;
                             Vector4 nc = net > 0 ? new Vector4(0, 1, 0, 1f) : net < 0 ? new Vector4(1, 0.4f, 0.4f, 1f) : new Vector4(0.7f, 0.7f, 0.7f, 1f);
-                            ImGui.TextColored(nc, net >= 0 ? $"+{net}G" : $"{net}G");
+                            ImGui.TextColored(nc, net >= 0 ? $"+{net}\uE049" : $"{net}\uE049");
                             break;
                         }
                         case Models.GameType.TexasHoldEm:
                         {
                             int net = player.PokerNetGains;
                             Vector4 nc = net > 0 ? new Vector4(0, 1, 0, 1f) : net < 0 ? new Vector4(1, 0.4f, 0.4f, 1f) : new Vector4(0.7f, 0.7f, 0.7f, 1f);
-                            ImGui.TextColored(nc, net >= 0 ? $"+{net}G" : $"{net}G");
+                            ImGui.TextColored(nc, net >= 0 ? $"+{net}\uE049" : $"{net}\uE049");
                             break;
                         }
                         default:
@@ -1593,12 +1557,10 @@ namespace SamplePlugin
                                 }
                                 ImGui.SameLine();
 
-                                // Display cards with PNG images or fallback styling
+                                // Display cards
                                 for (int cardIndex = 0; cardIndex < handInfo.Cards.Count; cardIndex++)
                                 {
                                     var card = handInfo.Cards[cardIndex];
-                                    var texture = plugin.GetCardTexture(card.GetImageFileName());
-
                                     if (cardIndex > 0) ImGui.SameLine();
 
                                     // Always use styled card representation
@@ -1680,7 +1642,7 @@ namespace SamplePlugin
                         string betInfo = player.PersistentBet > 0 ? $"Bet: {player.PersistentBet}" : "No bet placed";
                         int bjNet = player.TotalWinnings;
                         int rNet = player.RouletteNetGains;
-                        string netInfo = $"BJ net: {(bjNet >= 0 ? "+" : "")}{bjNet}G | R net: {(rNet >= 0 ? "+" : "")}{rNet}G";
+                        string netInfo = $"net: {(bjNet >= 0 ? "+" : "")}{bjNet}\uE049 | R net: {(rNet >= 0 ? "+" : "")}{rNet}\uE049";
                         engine.OnPlayerTell?.Invoke($"{player.Name}@{player.Server}", $"Bank: {player.Bank} | {betInfo} | {netInfo}");
                     }
                     ImGui.SameLine();
@@ -1716,7 +1678,7 @@ namespace SamplePlugin
         private void DrawNoneInterface()
         {
             ImGui.Spacing();
-            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), "🚫  NO GAME ACTIVE");
+            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), "NO GAME ACTIVE");
             ImGui.Spacing();
             ImGui.TextWrapped("The plugin is currently idle. Select a game from the dropdown above to begin. No chat commands will be processed.");
             ImGui.Separator();
@@ -1746,7 +1708,7 @@ namespace SamplePlugin
             if (seat.IsFolded)
             {
                 ImGui.SameLine();
-                ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 0.8f), "✗");
+                ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 0.8f), "X");
             }
         }
 
@@ -1766,10 +1728,10 @@ namespace SamplePlugin
 
             // Phase banner
             ImGui.TextColored(new Vector4(1, 0.84f, 0, 1),
-                racing   ? "🐦 Race in progress — 30 second race!" :
-                complete ? "🐦 Race complete! Payouts processed." :
-                idle     ? "🐦 CHOCOBO RACING — Press New Race to open betting." :
-                "🐦 CHOCOBO RACING — Place bets then Start Race!");
+                racing   ? "Race in progress — 30 second race!" :
+                complete ? "Race complete! Payouts processed." :
+                idle     ? "CHOCOBO RACING — Press New Race to open betting." :
+                "CHOCOBO RACING — Place bets then Start Race!");
 
             ImGui.Separator();
 
@@ -1820,7 +1782,7 @@ namespace SamplePlugin
                     ImGui.TableSetColumnIndex(6);
                     int totalOnRacer = table.ChocoboBets.Values.Where(b => b.RacerIndex == i).Sum(b => b.Amount);
                     if (totalOnRacer > 0)
-                        ImGui.TextColored(new Vector4(0.4f, 1, 0.4f, 1), $"{totalOnRacer}G");
+                        ImGui.TextColored(new Vector4(0.4f, 1, 0.4f, 1), $"{totalOnRacer}\uE049");
                     else
                         ImGui.TextColored(new Vector4(0.4f, 0.4f, 0.4f, 1), "-");
                 }
@@ -1889,6 +1851,20 @@ namespace SamplePlugin
             if (!idle && !racing && !complete)
             {
                 ImGui.TextColored(new Vector4(1, 1, 0, 1), "PLACE BET");
+                ImGui.SameLine();
+                ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), " Range:");
+                ImGui.SameLine();
+                ImGui.SetNextItemWidth(120);
+                int cMin = table.ChocoboMinBet;
+                if (ImGui.InputInt("##chocomin", ref cMin, 5, 100))
+                    table.ChocoboMinBet = Math.Max(1, Math.Min(cMin, table.ChocoboMaxBet));
+                ImGui.SameLine();
+                ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), "-");
+                ImGui.SameLine();
+                ImGui.SetNextItemWidth(130);
+                int cMax = table.ChocoboMaxBet;
+                if (ImGui.InputInt("##chocomax", ref cMax, 100, 1000))
+                    table.ChocoboMaxBet = Math.Max(table.ChocoboMinBet, cMax);
 
                 var pNames = table.Players.Values.Select(p => p.Name).ToArray();
                 if (pNames.Length > 0)
@@ -1897,9 +1873,9 @@ namespace SamplePlugin
                     ImGui.SetNextItemWidth(140);
                     ImGui.Combo("##chocoplayer", ref chocoSelectedPlayerIdx, pNames, pNames.Length);
                     ImGui.SameLine();
-                    ImGui.SetNextItemWidth(70);
+                    ImGui.SetNextItemWidth(120);
                     ImGui.InputInt("##chocoamt", ref chocoBetAmt);
-                    if (chocoBetAmt < table.MinBet) chocoBetAmt = table.MinBet;
+                    if (chocoBetAmt < table.ChocoboMinBet) chocoBetAmt = table.ChocoboMinBet;
                     ImGui.SameLine();
                     var rNames = chocobo.Roster.Select(r => $"#{r.Number} {r.Name}").ToArray();
                     ImGui.SetNextItemWidth(170);
@@ -1937,7 +1913,7 @@ namespace SamplePlugin
                         ImGui.TableNextRow();
                         ImGui.TableSetColumnIndex(0); ImGui.Text(plr?.Name ?? kvp.Key);
                         ImGui.TableSetColumnIndex(1); ImGui.Text($"#{racer.Number} {racer.Name}");
-                        ImGui.TableSetColumnIndex(2); ImGui.TextColored(new Vector4(1, 1, 0.5f, 1), $"{bet.Amount}G");
+                        ImGui.TableSetColumnIndex(2); ImGui.TextColored(new Vector4(1, 1, 0.5f, 1), $"{bet.Amount}\uE049");
                         ImGui.TableSetColumnIndex(3); ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), $"{racer.Odds:0.0}x");
                     }
                     ImGui.EndTable();
@@ -1987,12 +1963,14 @@ namespace SamplePlugin
                 if (inHand || table.PokerPhase == Models.PokerPhase.Complete)
                 {
                     ImGui.SameLine();
-                    ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"  POT: {table.PokerPot}G");
+                    ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"  POT: {table.PokerPot}\uE049");
                 }
 
                 ImGui.Separator();
 
                 // ── Oval table canvas ────────────────────────────────────────────────────
+                ImGui.Dummy(new Vector2(0, 12f));
+                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 16f);
                 var drawList = ImGui.GetWindowDrawList();
                 Vector2 canvasPos  = ImGui.GetCursorScreenPos();
                 float   canvasW    = 620f;
@@ -2020,7 +1998,7 @@ namespace SamplePlugin
                 drawList.PathStroke(feltBorder, ImDrawFlags.Closed, 3f);
 
                 // Pot label in center of felt
-                string potStr  = $"POT: {table.PokerPot}G";
+                string potStr  = $"POT: {table.PokerPot}\uE049";
                 var    potSize = ImGui.CalcTextSize(potStr);
                 drawList.AddText(center - potSize * 0.5f + new Vector2(0, -10f), potColor, potStr);
 
@@ -2147,13 +2125,13 @@ namespace SamplePlugin
                         // Bet / status line
                         string statusLine;
                         if (seat.IsFolded) statusLine = "FOLDED";
-                        else if (seat.IsAllIn) statusLine = $"ALL IN {seat.TotalBet}G";
-                        else if (seat.Bet > 0) statusLine = $"Bet: {seat.Bet}G";
+                        else if (seat.IsAllIn) statusLine = $"ALL IN {seat.TotalBet}\uE049";
+                        else if (seat.Bet > 0) statusLine = $"Bet: {seat.Bet}\uE049";
                         else if (seatIsAfk) statusLine = "AFK";
                         else
                         {
                             var p = engine.GetPlayer(seat.PlayerName);
-                            statusLine = p != null ? $"{p.Bank}G" : "";
+                            statusLine = p != null ? $"{p.Bank}\uE049" : "";
                         }
                         uint stCol = seat.IsFolded ? textGray
                                    : seat.IsAllIn  ? ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.5f, 0f, 1f))
@@ -2165,6 +2143,7 @@ namespace SamplePlugin
 
                 // Dummy invisible button to reserve canvas space
                 ImGui.Dummy(new Vector2(canvasW, canvasH));
+                ImGui.Dummy(new Vector2(0, 12f));
 
                 ImGui.Separator();
 
@@ -2196,12 +2175,21 @@ namespace SamplePlugin
                     ImGui.SameLine();
                     ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), "SB:");
                     ImGui.SameLine();
-                    ImGui.SetNextItemWidth(60);
+                    ImGui.SetNextItemWidth(120);
                     int pokerSb = table.PokerSmallBlind;
-                    if (ImGui.DragInt("##pokerSB", ref pokerSb, 5f, 1, 5000))
-                        table.PokerSmallBlind = pokerSb;
+                    if (ImGui.InputInt("##pokerSB", ref pokerSb, 5, 100))
+                        table.PokerSmallBlind = Math.Max(1, pokerSb);
                     ImGui.SameLine();
-                    ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), $"/ BB: {table.PokerSmallBlind * 2}G  |  Players: {engine.CurrentTable.Players.Count}");
+                    ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), $"/ BB: {table.PokerSmallBlind * 2}\uE049");
+                    ImGui.SameLine();
+                    ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), " Ante:");
+                    ImGui.SameLine();
+                    ImGui.SetNextItemWidth(120);
+                    int pokerAnte = table.PokerAnte;
+                    if (ImGui.InputInt("##pokerAnte", ref pokerAnte, 5, 100))
+                        table.PokerAnte = Math.Max(0, pokerAnte);
+                    ImGui.SameLine();
+                    ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), $"|  Players: {engine.CurrentTable.Players.Count}");
                 }
                 else
                 {
@@ -2358,6 +2346,10 @@ namespace SamplePlugin
             ImGui.TextColored(new Vector4(0.5f, 1f, 1f, 1f), "POKER SETTINGS");
             ImGui.Checkbox("Show player hole cards in player table##showPokerCards", ref _showPokerHoleCards);
 
+            bool useFirst = engine.CurrentTable.UseFirstNameOnly;
+            if (ImGui.Checkbox("Use first name only when addressing players##firstname", ref useFirst))
+                engine.CurrentTable.UseFirstNameOnly = useFirst;
+
             // Manual Dealer Actions (when in Manual mode)
             if (engine.Mode == DealerMode.Manual && engine.CurrentTable.GameState == Models.GameState.Playing)
             {
@@ -2388,487 +2380,6 @@ namespace SamplePlugin
                     {
                         engine.PlayerSplit(currentPlayer);
                     }
-                }
-            }
-        }
-
-        private void DrawPlayerManagementTab()
-        {
-            ImGui.TextColored(new Vector4(0.2f, 1f, 0.8f, 1f), "PLAYER MANAGEMENT");
-
-            // Add Player
-            ImGui.Text("Add Player:");
-            ImGui.SetNextItemWidth(200);
-            ImGui.InputText("##addPlayer", ref playerAddName, 100);
-            ImGui.SameLine();
-            if (ImGui.Button("Add##addBtn", new Vector2(60, 0)))
-            {
-                if (!string.IsNullOrEmpty(playerAddName))
-                {
-                    engine.AddPlayer(playerAddName);
-                    playerAddName = string.Empty;
-                }
-            }
-
-            // Remove Player
-            ImGui.Text("Remove Player:");
-            ImGui.SetNextItemWidth(200);
-            ImGui.InputText("##removePlayer", ref playerRemoveName, 100);
-            ImGui.SameLine();
-            if (ImGui.Button("Remove##removeBtn", new Vector2(60, 0)))
-            {
-                if (!string.IsNullOrEmpty(playerRemoveName))
-                {
-                    engine.RemovePlayer(playerRemoveName);
-                    playerRemoveName = string.Empty;
-                }
-            }
-
-            ImGui.Separator();
-
-            // Bank Management
-            ImGui.TextColored(new Vector4(1, 1, 0.5f, 1f), "BANK MANAGEMENT");
-
-            ImGui.Text("Add to Bank:");
-            ImGui.SetNextItemWidth(150);
-            ImGui.InputText("Player##bankPlayer", ref playerBankName, 100);
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(100);
-            ImGui.InputText("Amount##bankAmount", ref playerBankAmount, 20);
-            ImGui.SameLine();
-            if (ImGui.Button("Add to Bank##addBank", new Vector2(100, 0)))
-            {
-                if (!string.IsNullOrEmpty(playerBankName) && int.TryParse(playerBankAmount, out int amount))
-                {
-                    engine.AddPlayerBank(playerBankName, amount);
-                    playerBankName = string.Empty;
-                    playerBankAmount = string.Empty;
-                }
-            }
-
-            ImGui.Text("Set Bank:");
-            ImGui.SetNextItemWidth(150);
-            ImGui.InputText("Player##setBankPlayer", ref playerBankName, 100);
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(100);
-            ImGui.InputText("Amount##setBankAmount", ref playerSetBankAmount, 20);
-            ImGui.SameLine();
-            if (ImGui.Button("Set Bank##setBank", new Vector2(100, 0)))
-            {
-                if (!string.IsNullOrEmpty(playerBankName) && int.TryParse(playerSetBankAmount, out int amount))
-                {
-                    engine.SetPlayerBank(playerBankName, amount);
-                    playerBankName = string.Empty;
-                    playerSetBankAmount = string.Empty;
-                }
-            }
-
-            ImGui.Separator();
-
-            // Other Player Actions
-            ImGui.TextColored(new Vector4(1, 1, 0.5f, 1f), "PLAYER ACTIONS");
-
-            // Set Bet
-            ImGui.Text("Set Player Bet:");
-            ImGui.SetNextItemWidth(150);
-            ImGui.InputText("Player##betPlayer", ref playerBankName, 100);
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(100);
-            ImGui.InputText("Bet##betAmount", ref playerBetAmount, 20);
-            ImGui.SameLine();
-            if (ImGui.Button("Set Bet##setBet", new Vector2(100, 0)))
-            {
-                if (!string.IsNullOrEmpty(playerBankName) && int.TryParse(playerBetAmount, out int amount))
-                {
-                    var player = engine.CurrentTable.Players.Values.FirstOrDefault(p => 
-                        p.Name.Equals(playerBankName, StringComparison.OrdinalIgnoreCase));
-                    if (player != null)
-                    {
-                        player.PersistentBet = amount;
-                        playerBankName = string.Empty;
-                        playerBetAmount = string.Empty;
-                    }
-                }
-            }
-
-            // Rename Player
-            ImGui.Text("Rename Player:");
-            ImGui.SetNextItemWidth(120);
-            ImGui.InputText("Old##renameOld", ref playerRenameOld, 100);
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(120);
-            ImGui.InputText("New##renameNew", ref playerRenameNew, 100);
-            ImGui.SameLine();
-            if (ImGui.Button("Rename##renameBtn", new Vector2(80, 0)))
-            {
-                if (!string.IsNullOrEmpty(playerRenameOld) && !string.IsNullOrEmpty(playerRenameNew))
-                {
-                    RenamePlayer(playerRenameOld, playerRenameNew);
-                    playerRenameOld = string.Empty;
-                    playerRenameNew = string.Empty;
-                }
-            }
-
-            // Set Server
-            ImGui.Text("Set Player Server:");
-            ImGui.SetNextItemWidth(150);
-            ImGui.InputText("Player##serverPlayer", ref playerServerName, 100);
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(100);
-            ImGui.InputText("Server##serverValue", ref playerServerValue, 50);
-            ImGui.SameLine();
-            if (ImGui.Button("Set Server##setServer", new Vector2(100, 0)))
-            {
-                if (!string.IsNullOrEmpty(playerServerName) && !string.IsNullOrEmpty(playerServerValue))
-                {
-                    var player = engine.CurrentTable.Players.Values.FirstOrDefault(p => 
-                        p.Name.Equals(playerServerName, StringComparison.OrdinalIgnoreCase));
-                    if (player != null)
-                    {
-                        player.Server = playerServerValue;
-                        playerServerName = string.Empty;
-                        playerServerValue = string.Empty;
-                    }
-                }
-            }
-
-            // Kick Player
-            ImGui.Text("Kick Player:");
-            ImGui.SetNextItemWidth(200);
-            ImGui.InputText("##kickPlayer", ref kickPlayerName, 100);
-            ImGui.SameLine();
-            if (ImGui.Button("Kick##kickBtn", new Vector2(60, 0)))
-            {
-                if (!string.IsNullOrEmpty(kickPlayerName))
-                {
-                    engine.RemovePlayer(kickPlayerName);
-                    kickPlayerName = string.Empty;
-                }
-            }
-
-            // AFK Toggle
-            ImGui.Text("Toggle AFK:");
-            ImGui.SetNextItemWidth(200);
-            ImGui.InputText("##afkPlayer", ref afkPlayerName, 100);
-            ImGui.SameLine();
-            if (ImGui.Button("Toggle AFK##afkBtn", new Vector2(100, 0)))
-            {
-                if (!string.IsNullOrEmpty(afkPlayerName))
-                {
-                    engine.ToggleAFK(afkPlayerName);
-                    afkPlayerName = string.Empty;
-                }
-            }
-        }
-
-        private void DrawGameActionsTab()
-        {
-            ImGui.TextColored(new Vector4(0.5f, 1f, 0.5f, 1f), "GAME ACTIONS");
-
-            if (engine.CurrentTable.GameState == Models.GameState.Playing)
-            {
-                if (engine.CurrentTable.CurrentTurnIndex < engine.CurrentTable.TurnOrder.Count)
-                {
-                    var currentPlayer = engine.CurrentTable.TurnOrder[engine.CurrentTable.CurrentTurnIndex];
-                    ImGui.Text($"Current Turn: {currentPlayer}");
-                    ImGui.Text($"Time Remaining: {engine.CurrentTable.TurnTimeRemaining}s");
-
-                    ImGui.Separator();
-
-                    ImGui.TextColored(new Vector4(1, 1, 0, 1), "PLAYER ACTIONS (Force as Admin):");
-
-                    if (ImGui.Button("HIT", new Vector2(100, 0)))
-                    {
-                        engine.PlayerHit(currentPlayer);
-                    }
-                    ImGui.SameLine();
-                    if (ImGui.Button("STAND", new Vector2(100, 0)))
-                    {
-                        engine.PlayerStand(currentPlayer);
-                    }
-                    ImGui.SameLine();
-                    if (ImGui.Button("DOUBLE DOWN", new Vector2(100, 0)))
-                    {
-                        engine.PlayerDouble(currentPlayer);
-                    }
-                    ImGui.SameLine();
-                    if (ImGui.Button("SPLIT", new Vector2(100, 0)))
-                    {
-                        engine.PlayerSplit(currentPlayer);
-                    }
-
-                    // Insurance button (if dealer shows ace)
-                    if (engine.CurrentTable.DealerHand.Count > 0 && engine.CurrentTable.DealerHand[0].IsAce && engine.CurrentTable.InsuranceEnabled)
-                    {
-                        ImGui.Separator();
-                        ImGui.TextColored(new Vector4(0, 1, 1, 1f), "INSURANCE AVAILABLE");
-                        if (ImGui.Button("BUY INSURANCE", new Vector2(120, 0)))
-                        {
-                            engine.PlayerInsurance(currentPlayer);
-                        }
-                    }
-                }
-                else
-                {
-                    ImGui.Text("All players have finished their turns.");
-                }
-            }
-            else
-            {
-                ImGui.Text("No active game. Use DEAL to start a game.");
-            }
-
-            ImGui.Separator();
-
-            // Quick Player Commands (simulate as any player)
-            ImGui.TextColored(new Vector4(1, 0.5f, 1, 1f), "SIMULATE PLAYER COMMANDS");
-            ImGui.Text("(These simulate commands as if a player typed them)");
-
-            ImGui.SetNextItemWidth(150);
-            ImGui.InputText("As Player##simPlayer", ref simulatePlayerName, 100);
-
-            if (!string.IsNullOrEmpty(simulatePlayerName))
-            {
-                ImGui.SameLine();
-                if (ImGui.Button("Simulate HIT##simHit", new Vector2(80, 0)))
-                {
-                    plugin.CommandParser.Parse(simulatePlayerName, ">HIT", AdminName, engine.Mode);
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("Simulate STAND##simStand", new Vector2(80, 0)))
-                {
-                    plugin.CommandParser.Parse(simulatePlayerName, ">STAND", AdminName, engine.Mode);
-                }
-
-                // Second row of simulation buttons
-                if (ImGui.Button("Simulate DOUBLE##simDouble", new Vector2(80, 0)))
-                {
-                    plugin.CommandParser.Parse(simulatePlayerName, ">DOUBLE", AdminName, engine.Mode);
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("Simulate SPLIT##simSplit", new Vector2(80, 0)))
-                {
-                    plugin.CommandParser.Parse(simulatePlayerName, ">SPLIT", AdminName, engine.Mode);
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("Simulate INSURANCE##simInsurance", new Vector2(80, 0)))
-                {
-                    plugin.CommandParser.Parse(simulatePlayerName, ">INSURANCE", AdminName, engine.Mode);
-                }
-            }
-        }
-
-        private void DrawPlayersTab()
-        {
-            ImGui.TextColored(new Vector4(0.2f, 1f, 0.8f, 1f), $"PLAYERS ({engine.CurrentTable.Players.Count})");
-
-            // Dealer section
-            if (engine.CurrentTable.DealerHand.Count > 0)
-            {
-                ImGui.Separator();
-                ImGui.TextColored(new Vector4(1, 0.5f, 0, 1f), "🎴 DEALER");
-
-                // Display dealer cards with fancy rendering
-                ImGui.Text("Cards: ");
-                ImGui.SameLine();
-
-                for (int cardIndex = 0; cardIndex < engine.CurrentTable.DealerHand.Count; cardIndex++)
-                {
-                    if (cardIndex > 0) ImGui.SameLine();
-
-                    // Don't show hole card if not revealed
-                    bool isHoleCard = cardIndex == 1 && !engine.CurrentTable.HoleCardRevealed;
-
-                    var drawList = ImGui.GetWindowDrawList();
-                    var pos = ImGui.GetCursorScreenPos();
-                    var cardSize = new Vector2(48, 68);
-
-                    if (isHoleCard)
-                    {
-                        // Draw hidden card - darker background with "?" 
-                        drawList.AddRectFilled(pos, pos + cardSize, ImGui.ColorConvertFloat4ToU32(new Vector4(0.3f, 0.3f, 0.3f, 1)));
-                        drawList.AddRect(pos, pos + cardSize, ImGui.ColorConvertFloat4ToU32(new Vector4(0.8f, 0.8f, 0.8f, 1f)), 4.0f, ImDrawFlags.RoundCornersAll, 2.0f);
-
-                        var textPos = pos + cardSize * 0.5f;
-                        var questionText = "?";
-                        var textSize = ImGui.CalcTextSize(questionText);
-                        textPos -= textSize * 0.5f;
-
-                        drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(new Vector4(1, 1, 1, 1)), questionText);
-                    }
-                    else
-                    {
-                        // Draw revealed card
-                        var card = engine.CurrentTable.DealerHand[cardIndex];
-
-                        // Card background (white)
-                        drawList.AddRectFilled(pos, pos + cardSize, ImGui.ColorConvertFloat4ToU32(new Vector4(1, 1, 1, 1)));
-
-                        // Card border
-                        Vector4 borderColor = card.IsRed ? new Vector4(1, 0.2f, 0.2f, 1f) : new Vector4(0.2f, 0.2f, 0.2f, 1f);
-                        drawList.AddRect(pos, pos + cardSize, ImGui.ColorConvertFloat4ToU32(borderColor), 4.0f, ImDrawFlags.RoundCornersAll, 2.0f);
-
-                        // Card text (center aligned)
-                        var textPos = pos + cardSize * 0.5f;
-                        var cardText = card.GetCardDisplay();
-                        var textSize = ImGui.CalcTextSize(cardText);
-                        textPos -= textSize * 0.5f;
-
-                        drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(borderColor), cardText);
-                    }
-
-                    // Invisible button for interaction
-                    ImGui.SetCursorScreenPos(pos);
-                    ImGui.InvisibleButton($"dealercard_{cardIndex}", cardSize);
-
-                    // Tooltip
-                    if (ImGui.IsItemHovered())
-                    {
-                        if (isHoleCard)
-                        {
-                            ImGui.SetTooltip("Hidden Card");
-                        }
-                        else
-                        {
-                            ImGui.SetTooltip(engine.CurrentTable.DealerHand[cardIndex].GetCardDisplay());
-                        }
-                    }
-
-                    // Move cursor for next card
-                    ImGui.SetCursorScreenPos(pos + new Vector2(cardSize.X + 4, 0));
-                }
-
-                ImGui.Text(""); // New line after cards
-
-                if (engine.CurrentTable.HoleCardRevealed)
-                {
-                    int dealerScore = engine.CurrentTable.GetDealerScore();
-                    Vector4 dealerColor = dealerScore > 21 ? new Vector4(1, 0.5f, 0.5f, 1) : new Vector4(1, 1, 1, 1);
-                    ImGui.TextColored(dealerColor, $"Total: {dealerScore}");
-                }
-                else
-                {
-                    ImGui.Text("Total: [Hidden]");
-                }
-            }
-
-            if (engine.CurrentTable.Players.Count == 0)
-            {
-                ImGui.Separator();
-                ImGui.Text("No players. Use Player Management tab to add players.");
-                return;
-            }
-
-            foreach (var player in engine.CurrentTable.Players.Values)
-            {
-                ImGui.Separator();
-
-                // Enhanced player header with statistics
-                bool isCurrentTurn = engine.CurrentTable.CurrentTurnIndex < engine.CurrentTable.TurnOrder.Count &&
-                    engine.CurrentTable.TurnOrder[engine.CurrentTable.CurrentTurnIndex].Equals(player.Name.ToUpper());
-
-                if (isCurrentTurn)
-                {
-                    ImGui.TextColored(new Vector4(0, 1, 0, 1), $"► {player.Name}");
-                }
-                else
-                {
-                    ImGui.TextColored(new Vector4(1, 1, 0.5f, 1f), player.Name);
-                }
-
-                ImGui.SameLine();
-                ImGui.Text($"({player.Server})");
-
-                // Player stats in one line
-                ImGui.Text($"Bank: {player.Bank} | Bet: {player.PersistentBet} | W/L: {player.GamesWon}/{player.GamesPlayed - player.GamesWon} ({player.GetWinPercentage():F1}%)");
-
-                // Enhanced hand display with colors
-                if (player.Hands.Count > 0)
-                {
-                    for (int handIndex = 0; handIndex < player.Hands.Count; handIndex++)
-                    {
-                        var handInfo = player.GetHandInfo(handIndex);
-                        if (handInfo.Cards.Count > 0)
-                        {
-                            string handLabel = player.Hands.Count > 1 ? $"Hand {handIndex + 1}: " : "Hand: ";
-                            ImGui.Text(handLabel);
-                            ImGui.SameLine();
-
-                            // Display cards with color coding
-                            for (int cardIndex = 0; cardIndex < handInfo.Cards.Count; cardIndex++)
-                            {
-                                var card = handInfo.Cards[cardIndex];
-                                Vector4 cardColor = card.IsRed ? new Vector4(1, 0.3f, 0.3f, 1f) : new Vector4(0.8f, 0.8f, 0.8f, 1f);
-
-                                if (cardIndex > 0) ImGui.SameLine();
-                                ImGui.TextColored(cardColor, card.GetCardDisplay());
-                                if (cardIndex < handInfo.Cards.Count - 1) 
-                                {
-                                    ImGui.SameLine();
-                                    ImGui.Text(" ");
-                                }
-                            }
-
-                            // Hand value with status
-                            ImGui.SameLine();
-                            Vector4 valueColor = handInfo.IsBust ? new Vector4(1, 0.5f, 0.5f, 1f) : 
-                                                 handInfo.IsBlackjack ? new Vector4(1, 1, 0, 1f) :
-                                                 new Vector4(0.8f, 1, 0.8f, 1f);
-                            ImGui.TextColored(valueColor, $" → {handInfo.GetHandDescription()}");
-
-                            // Active hand indicator
-                            if (handIndex == player.ActiveHandIndex && isCurrentTurn)
-                            {
-                                ImGui.SameLine();
-                                ImGui.TextColored(new Vector4(0, 1, 0, 1f), " ◄ ACTIVE");
-                            }
-                        }
-                    }
-                }
-
-                // Player status indicators
-                if (player.IsAfk)
-                {
-                    ImGui.TextColored(new Vector4(1, 0.5f, 0.5f, 1f), "⚠ AFK");
-                }
-                else if (isCurrentTurn && engine.CurrentTable.GameState == Models.GameState.Playing)
-                {
-                    ImGui.TextColored(new Vector4(0, 1, 0, 1f), "🎮 PLAYING");
-
-                    // Show available actions
-                    var currentHandInfo = player.GetHandInfo();
-                    ImGui.SameLine();
-                    if (player.CanSplit())
-                    {
-                        ImGui.TextColored(new Vector4(1, 1, 0, 1f), " | Can SPLIT");
-                    }
-                    if (player.CanDoubleDown())
-                    {
-                        ImGui.TextColored(new Vector4(1, 1, 0, 1f), " | Can DOUBLE");
-                    }
-                }
-                else if (player.IsStanding)
-                {
-                    ImGui.TextColored(new Vector4(0.5f, 0.5f, 1f, 1f), "✋ STANDING");
-                }
-
-                // Insurance display
-                if (player.HasInsurance)
-                {
-                    ImGui.TextColored(new Vector4(0, 1, 1, 1f), $"🛡️ Insurance: {player.InsuranceBet}");
-                }
-
-                // Quick actions for this player
-                ImGui.Text("Quick Actions:");
-                ImGui.SameLine();
-                if (ImGui.Button($"Toggle AFK##{player.Name}afk", new Vector2(80, 0)))
-                {
-                    engine.ToggleAFK(player.Name);
-                }
-                ImGui.SameLine();
-                if (ImGui.Button($"Remove##{player.Name}remove", new Vector2(80, 0)))
-                {
-                    engine.RemovePlayer(player.Name);
                 }
             }
         }
@@ -2919,15 +2430,15 @@ namespace SamplePlugin
                         ImGui.TextColored(new Vector4(1, 1, 0.5f, 1f), player.Name);
 
                         // BJ stats
-                        ImGui.Text($"Bank: {player.Bank} | BJ Winnings: {player.TotalWinnings}");
-                        ImGui.Text($"BJ Games: {player.GamesPlayed} | Won: {player.GamesWon} | Win Rate: {player.GetWinPercentage():F1}%");
+                        ImGui.Text($"Bank: {player.Bank} | Winnings: {player.TotalWinnings}");
+                        ImGui.Text($"Games: {player.GamesPlayed} | Won: {player.GamesWon} | Win Rate: {player.GetWinPercentage():F1}%");
 
                         // Roulette net gains
                         int rouNet = player.RouletteNetGains;
                         Vector4 rouColor = rouNet > 0 ? new Vector4(0, 1, 0, 1f) :
                                            rouNet < 0 ? new Vector4(1, 0.4f, 0.4f, 1f) :
                                                         new Vector4(0.6f, 0.6f, 0.6f, 1f);
-                        ImGui.TextColored(rouColor, $"Roulette Net: {(rouNet >= 0 ? "+" : "")}{rouNet}G");
+                        ImGui.TextColored(rouColor, $"Roulette Net: {(rouNet >= 0 ? "+" : "")}{rouNet}\uE049");
 
                         // Win rate progress bar
                         if (player.GamesPlayed > 0)

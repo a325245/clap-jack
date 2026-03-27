@@ -1,7 +1,6 @@
 using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
-using System.IO;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using Dalamud.Game.Text;
@@ -16,7 +15,6 @@ using System.Diagnostics;
 using System.Linq;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.System.String;
-using Dalamud.Interface.Textures.TextureWraps;
 
 namespace SamplePlugin
 {
@@ -51,9 +49,6 @@ namespace SamplePlugin
         private Queue<string> MessageQueue { get; } = new();
         private Stopwatch MessageTimer { get; } = new();
         private const int MessageDelayMs = 400;
-
-        // Card texture cache - disabled, using styled cards
-        private Dictionary<string, nint> CardTextures { get; } = new();
 
         public static Plugin? PluginAccessorInstance { get; private set; }
 
@@ -143,7 +138,7 @@ namespace SamplePlugin
             // Also store recent chat in UI for debugging
             UI.AddDebugChat($"[{(int)type}:{type}] {rawSender} ({senderName}): {text}");
 
-            if (string.IsNullOrEmpty(senderName) || !text.StartsWith(">")) return;
+            if (string.IsNullOrEmpty(senderName)) return;
 
             // Detect what channel this came from
             ChatChannel sourceChannel = ChatHandler.DetectChatChannel(type);
@@ -170,9 +165,6 @@ namespace SamplePlugin
         {
             UI.Dispose();
 
-            // Card textures disabled
-            CardTextures.Clear();
-
             ChatGui.ChatMessage -= ChatGui_ChatMessage;
             CommandManager.RemoveHandler(CommandName);
             PluginInterface.UiBuilder.Draw -= DrawUI;
@@ -195,18 +187,6 @@ namespace SamplePlugin
         private void ToggleMainUI()
         {
             UI.IsVisible = !UI.IsVisible;
-        }
-
-        public nint GetCardTexture(string cardFileName)
-        {
-            // Always return zero to use styled fallback cards
-            return nint.Zero;
-        }
-
-        private nint LoadTextureFromBytes(byte[] imageBytes)
-        {
-            // This method is no longer needed with TextureProvider
-            return nint.Zero;
         }
 
         public void SendGameMessage(string message)

@@ -109,6 +109,8 @@ public class ChocoboEngine
         }
     }
 
+    private string DN(string name) => CurrentTable.GetDisplayName(name);
+
     // ── Bet placement ──────────────────────────────────────────────────────────
 
     public bool PlaceBet(string playerName, int racerNumber, int amount, out string error)
@@ -121,12 +123,21 @@ public class ChocoboEngine
         if (racerNumber < 1 || racerNumber > Roster.Length)
         { error = $"Invalid chocobo number. Choose 1-{Roster.Length}."; return false; }
 
-        if (amount < CurrentTable.MinBet || amount > CurrentTable.MaxBet)
-        { error = $"Bet must be {CurrentTable.MinBet}-{CurrentTable.MaxBet}G."; return false; }
+        if (amount < CurrentTable.ChocoboMinBet || amount > CurrentTable.ChocoboMaxBet)
+        {
+            error = $"Bet must be {CurrentTable.ChocoboMinBet}-{CurrentTable.ChocoboMaxBet}\uE049.";
+            var errP = GetPlayer(playerName);
+            if (errP != null)
+            {
+                string srv = string.IsNullOrEmpty(errP.Server) ? "Ultros" : errP.Server;
+                OnPlayerTell?.Invoke($"{errP.Name}@{srv}", error);
+            }
+            return false;
+        }
 
         var player = GetPlayer(playerName);
         if (player == null) { error = "You are not seated at this table."; return false; }
-        if (player.Bank < amount) { error = $"Insufficient funds (have {player.Bank}G)."; return false; }
+        if (player.Bank < amount) { error = $"Insufficient funds (have {player.Bank}\uE049)."; return false; }
 
         string key = playerName.ToUpperInvariant();
 
@@ -138,8 +149,8 @@ public class ChocoboEngine
         CurrentTable.ChocoboBets[key] = new ChocoboBet { RacerIndex = racerNumber - 1, Amount = amount };
 
         var racer = Roster[racerNumber - 1];
-        QueueMessage($"{playerName} bets {amount}G on #{racerNumber} {racer.Name} ({racer.Odds:0.0}x odds)");
-        LogAction($"{playerName} bet {amount}G on {racer.Name}");
+        QueueMessage($"{DN(playerName)} bets {amount}\uE049 on #{racerNumber} {racer.Name} ({racer.Odds:0.0}x odds)");
+        LogAction($"{playerName} bet {amount}\uE049 on {racer.Name}");
         OnUIUpdate?.Invoke();
         return true;
     }
@@ -340,14 +351,14 @@ public class ChocoboEngine
                 int profit = payout - bet.Amount;
                 player.Bank += payout;
                 player.ChocoboNetGains += profit;
-                QueueMessage($"{player.Name}: {winner.Name} WINS! +{profit}G -> Bank: {player.Bank}G");
-                LogAction($"{player.Name} won {profit}G on {winner.Name}");
+                QueueMessage($"{DN(player.Name)}: {winner.Name} WINS! +{profit}\uE049 -> Bank: {player.Bank}\uE049");
+                LogAction($"{player.Name} won {profit}\uE049 on {winner.Name}");
             }
             else
             {
                 player.ChocoboNetGains -= bet.Amount;
-                QueueMessage($"{player.Name}: {Roster[bet.RacerIndex].Name} lost. -{bet.Amount}G -> Bank: {player.Bank}G");
-                LogAction($"{player.Name} lost {bet.Amount}G on {Roster[bet.RacerIndex].Name}");
+                QueueMessage($"{DN(player.Name)}: {Roster[bet.RacerIndex].Name} lost. -{bet.Amount}\uE049 -> Bank: {player.Bank}\uE049");
+                LogAction($"{player.Name} lost {bet.Amount}\uE049 on {Roster[bet.RacerIndex].Name}");
             }
         }
 
@@ -401,7 +412,7 @@ public class ChocoboEngine
             if (player == null) continue;
 
             player.Bank += bet.Amount;
-            QueueMessage($"{player.Name}: {bet.Amount}G refunded -> Bank: {player.Bank}G");
+            QueueMessage($"{player.Name}: {bet.Amount}\uE049 refunded -> Bank: {player.Bank}\uE049");
         }
 
         CurrentTable.ChocoboBets.Clear();

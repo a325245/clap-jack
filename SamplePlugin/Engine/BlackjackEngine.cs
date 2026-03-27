@@ -61,6 +61,8 @@ public class BlackjackEngine
 
     public void Announce(string message) => SendDealerChatMessage(message);
 
+    private string DN(string name) => CurrentTable.GetDisplayName(name);
+
     public void StartGame()
     {
         if (CurrentTable.GameState == Models.GameState.Playing) return; // prevent double-deal
@@ -93,7 +95,7 @@ public class BlackjackEngine
         }
 
         // Build turn order and set up hands
-        CurrentTable.TurnOrder = validPlayers.Select(p => p.Name.ToUpper()).ToList();
+        CurrentTable.TurnOrder = validPlayers.Select(p => p.Name).ToList();
         CurrentTable.CurrentTurnIndex = 0;
         if (!CurrentTable.PersistentDeck)
             CurrentTable.BuildDeck();
@@ -169,7 +171,7 @@ public class BlackjackEngine
         // Announce player's cards at the start of their turn
         var handInfo = player.GetHandInfo(0);
         string handDisplay = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
-        SendDealerMessage($"{playerName}: {handDisplay} ({handInfo.GetHandDescription()})");
+        SendDealerMessage($"{DN(playerName)}: {handDisplay} ({handInfo.GetHandDescription()})");
 
         // Auto-complete if blackjack — no announcement, payout handles it
         if (handInfo.IsBlackjack)
@@ -190,7 +192,7 @@ public class BlackjackEngine
             availableCommands.Add(">SPLIT");
 
         string commandsText = string.Join(" or ", availableCommands);
-        SendDealerMessage($"{playerName}, it's your turn. Type {commandsText}");
+        SendDealerMessage($"{DN(playerName)}, it's your turn. Type {commandsText}");
         LogAction($"Starting {playerName}'s turn");
     }
 
@@ -254,7 +256,7 @@ public class BlackjackEngine
                 var playerName = CurrentTable.CurrentTurnIndex < CurrentTable.TurnOrder.Count 
                     ? CurrentTable.TurnOrder[CurrentTable.CurrentTurnIndex] 
                     : "Unknown";
-                SendDealerMessage($"{playerName} has {CurrentTable.TurnTimeRemaining}s remaining!");
+                SendDealerMessage($"{DN(playerName)} has {CurrentTable.TurnTimeRemaining}s remaining!");
                 LogAction($"Timer warning for {playerName}: {CurrentTable.TurnTimeRemaining}s");
                 CurrentTable.TimerWarningShown = true;
             }
@@ -273,7 +275,7 @@ public class BlackjackEngine
                     {
                         player.IsStanding = true;
                         player.IsAfk = true;
-                        SendDealerMessage($"{playerName} timed out and is now AFK!");
+                        SendDealerMessage($"{DN(playerName)} timed out and is now AFK!");
                         LogAction($"{playerName} timed out - auto AFK");
                         AdvanceToNextTurn(playerName);
                     }
@@ -284,7 +286,7 @@ public class BlackjackEngine
                     if (!CurrentTable.TimerTimeoutShown)
                     {
                         CurrentTable.TimerTimeoutShown = true;
-                        SendDealerMessage($"{playerName}'s time is up. No commands needed — dealer controls the game.");
+                        SendDealerMessage($"{DN(playerName)}'s time is up. No commands needed — dealer controls the game.");
                         LogAction($"{playerName} time limit exceeded (manual mode)");
                     }
                 }
@@ -304,18 +306,18 @@ public class BlackjackEngine
 
         var handInfo = player.GetHandInfo();
         string allCards = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
-        SendDealerMessage($"{playerName} hits: {allCards} -> {handInfo.GetHandDescription()}");
+        SendDealerMessage($"{DN(playerName)} hits: {allCards} -> {handInfo.GetHandDescription()}");
         LogAction($"{playerName} hits: {newCard.GetCardDisplay()} -> total {handInfo.Score}");
 
         if (handInfo.IsBust)
         {
-            SendDealerMessage($"{playerName} BUSTS with {handInfo.Score}!");
+            SendDealerMessage($"{DN(playerName)} BUSTS with {handInfo.Score}!");
             LogAction($"{playerName} busts with {handInfo.Score}");
             AdvanceToNextHandOrPlayer(playerName);
         }
         else if (handInfo.Score == 21)
         {
-            SendDealerMessage($"{playerName} reaches 21!");
+            SendDealerMessage($"{DN(playerName)} reaches 21!");
             LogAction($"{playerName} reaches 21");
             AdvanceToNextHandOrPlayer(playerName);
         }
@@ -330,7 +332,6 @@ public class BlackjackEngine
         if (player == null) return;
 
         var handInfo = player.GetHandInfo();
-        SendDealerMessage($"{playerName} stands with {handInfo.GetHandDescription()}");
         LogAction($"{playerName} stands with {handInfo.Score}");
 
         AdvanceToNextHandOrPlayer(playerName);
@@ -353,12 +354,12 @@ public class BlackjackEngine
 
         var handInfo = player.GetHandInfo();
         string allCards = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
-        SendDealerMessage($"{playerName} doubles down: {allCards} -> {handInfo.GetHandDescription()}");
+        SendDealerMessage($"{DN(playerName)} doubles down: {allCards} -> {handInfo.GetHandDescription()}");
         LogAction($"{playerName} doubled down: {newCard.GetCardDisplay()} -> total {handInfo.Score}");
 
         if (handInfo.IsBust)
         {
-            SendDealerMessage($"{playerName} BUSTS after doubling with {handInfo.Score}!");
+            SendDealerMessage($"{DN(playerName)} BUSTS after doubling with {handInfo.Score}!");
             LogAction($"{playerName} busts after doubling with {handInfo.Score}");
         }
 
@@ -394,12 +395,12 @@ public class BlackjackEngine
         player.Hands.Add(secondHand);
         player.CurrentBets.Add(betAmount);
 
-        SendDealerMessage($" {playerName} splits! Now playing {player.Hands.Count} hands.");
+        SendDealerMessage($"{DN(playerName)} splits! Now playing {player.Hands.Count} hands.");
 
         // Show the new first hand
         var handInfo = player.GetHandInfo(0);
         string handDisplay = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
-        SendDealerMessage($" {playerName}, hand 1: {handDisplay} ({handInfo.GetHandDescription()})");
+        SendDealerMessage($"{DN(playerName)}, hand 1: {handDisplay} ({handInfo.GetHandDescription()})");
 
         LogAction($"{playerName} split into {player.Hands.Count} hands");
 
@@ -419,7 +420,7 @@ public class BlackjackEngine
                 availableCommands.Add(">DOUBLE");
 
             string commandsText = string.Join(" or ", availableCommands);
-            SendDealerMessage($"{playerName}, playing hand 1. Type {commandsText}");
+            SendDealerMessage($"{DN(playerName)}, playing hand 1. Type {commandsText}");
         }
 
         OnUIUpdate?.Invoke();
@@ -443,7 +444,7 @@ public class BlackjackEngine
             // Announce the next hand with cards
             var handInfo = player.GetHandInfo();
             string handDisplay = string.Join("", handInfo.Cards.Select(c => FormatCard(c)));
-            SendDealerMessage($"{playerName}, hand {player.ActiveHandIndex + 1} of {player.Hands.Count}: {handDisplay} ({handInfo.GetHandDescription()})");
+            SendDealerMessage($"{DN(playerName)}, hand {player.ActiveHandIndex + 1} of {player.Hands.Count}: {handDisplay} ({handInfo.GetHandDescription()})");
 
             // Build available commands for this hand
             var availableCommands = new List<string> { ">HIT", ">STAND" };
@@ -452,7 +453,7 @@ public class BlackjackEngine
                 availableCommands.Add(">DOUBLE");
 
             string commandsText = string.Join(" or ", availableCommands);
-            SendDealerMessage($"{playerName}, playing hand {player.ActiveHandIndex + 1}. Type {commandsText}");
+            SendDealerMessage($"{DN(playerName)}, playing hand {player.ActiveHandIndex + 1}. Type {commandsText}");
             LogAction($"{playerName} advancing to hand {player.ActiveHandIndex + 1}");
         }
         else
@@ -460,7 +461,7 @@ public class BlackjackEngine
             // Player finished all hands — only announce if they split
             player.IsStanding = true;
             if (player.Hands.Count > 1)
-                SendDealerMessage($"{playerName} finished playing all hands");
+                SendDealerMessage($"{DN(playerName)} finished playing all hands");
             AdvanceToNextTurn(playerName);
         }
     }
@@ -468,7 +469,7 @@ public class BlackjackEngine
     private bool IsPlayerTurn(string playerName)
     {
         if (CurrentTable.CurrentTurnIndex >= CurrentTable.TurnOrder.Count) return false;
-        return CurrentTable.TurnOrder[CurrentTable.CurrentTurnIndex].Equals(playerName.ToUpper(), StringComparison.OrdinalIgnoreCase);
+        return CurrentTable.TurnOrder[CurrentTable.CurrentTurnIndex].Equals(playerName, StringComparison.OrdinalIgnoreCase);
     }
 
     private void AdvanceToNextTurn(string playerName)
@@ -540,12 +541,12 @@ public class BlackjackEngine
             {
                 int payout = player.InsuranceBet * 2; // Insurance pays 2:1
                 player.Bank += payout;
-                SendDealerMessage($"{player.Name} insurance pays {payout}!");
+                SendDealerMessage($"{DN(player.Name)} insurance pays {payout}!");
                 LogAction($"{player.Name} insurance won {payout}");
             }
             else
             {
-                SendDealerMessage($"{player.Name} loses insurance bet");
+                SendDealerMessage($"{DN(player.Name)} loses insurance bet");
                 LogAction($"{player.Name} insurance lost {player.InsuranceBet}");
             }
         }
@@ -622,11 +623,11 @@ public class BlackjackEngine
 
                 string part = result switch
                 {
-                    "BLACKJACK" => $"{handLabel}BLACKJACK +{winAmount}G",
-                    "WIN"       => $"{handLabel}WIN +{winAmount}G",
+                    "BLACKJACK" => $"{handLabel}BLACKJACK +{winAmount}\uE049",
+                    "WIN"       => $"{handLabel}WIN +{winAmount}\uE049",
                     "PUSH"      => $"{handLabel}PUSH",
-                    "BUST"      => $"{handLabel}BUST -{bet}G",
-                    _           => $"{handLabel}LOSE -{bet}G"
+                    "BUST"      => $"{handLabel}BUST -{bet}\uE049",
+                    _           => $"{handLabel}LOSE -{bet}\uE049"
                 };
                 handResults.Add(part);
 
@@ -637,7 +638,7 @@ public class BlackjackEngine
             int bankNow = player.Bank;
             int net = bankNow - bankBefore;
             string handsStr = string.Join(" | ", handResults);
-            SendDealerMessage($"{player.Name}: {handsStr} | Bank: {bankNow}G");
+            SendDealerMessage($"{DN(player.Name)}: {handsStr} | Bank: {bankNow}\uE049");
         }
 
         CurrentTable.GameState = Models.GameState.Lobby;
@@ -700,9 +701,10 @@ public class BlackjackEngine
         }
 
         // If player was mid-turn during active game, advance turn
-        if (CurrentTable.GameState == Models.GameState.Playing && CurrentTable.TurnOrder.Contains(nameUpper))
+        int _turnIdx = CurrentTable.TurnOrder.FindIndex(n => n.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (CurrentTable.GameState == Models.GameState.Playing && _turnIdx >= 0)
         {
-            int playerIndex = CurrentTable.TurnOrder.IndexOf(nameUpper);
+            int playerIndex = _turnIdx;
             CurrentTable.TurnOrder.RemoveAt(playerIndex);
 
             // If it was current player's turn, advance
@@ -837,7 +839,7 @@ public class BlackjackEngine
             if (refund > 0)
             {
                 player.Bank += refund;
-                SendDealerMessage($"{player.Name}: {refund}G refunded \u2192 Bank: {player.Bank}G");
+                SendDealerMessage($"{player.Name}: {refund}\uE049 refunded \u2192 Bank: {player.Bank}\uE049");
             }
             player.Hands.Clear();
             player.CurrentBets.Clear();
