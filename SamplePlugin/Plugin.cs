@@ -305,9 +305,28 @@ namespace SamplePlugin
             // Process poker turn timer and message queue
             PokerEngine.ProcessTick();
 
-            ProcessMessageQueue();
-            UI.Draw();
-        }
+                ProcessAfkEchoes();
+                ProcessMessageQueue();
+                UI.Draw();
+            }
+
+            private DateTime _lastAfkEchoCheck = DateTime.MinValue;
+            private void ProcessAfkEchoes()
+            {
+                if ((DateTime.Now - _lastAfkEchoCheck).TotalSeconds < 15) return;
+                _lastAfkEchoCheck = DateTime.Now;
+
+                foreach (var player in Engine.CurrentTable.Players.Values)
+                {
+                    if (!player.IsAfk || !player.AfkSince.HasValue) continue;
+                    int mins = (int)(DateTime.Now - player.AfkSince.Value).TotalMinutes;
+                    if (mins > 0 && mins > player.AfkNotifiedMinutes)
+                    {
+                        player.AfkNotifiedMinutes = mins;
+                        SendAdminEcho($"💤 {player.Name} has been AFK for {mins} minute{(mins == 1 ? "" : "s")}.");
+                    }
+                }
+            }
 
         private void DrawConfigUI()
         {

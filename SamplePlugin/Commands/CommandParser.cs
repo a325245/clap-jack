@@ -191,12 +191,18 @@ public class CommandParser
 
         switch (command)
         {
-            case "HELP":
             case "RULES":
                 var player = engine.CurrentTable.Players.Values.FirstOrDefault(p =>
                     p.Name.Equals(playerName, StringComparison.OrdinalIgnoreCase));
                 if (player != null)
                     OnPlayerTell?.Invoke($"{playerName}@{player.Server}", GetRulesText(engine.CurrentTable));
+                break;
+
+            case "HELP":
+                player = engine.CurrentTable.Players.Values.FirstOrDefault(p =>
+                    p.Name.Equals(playerName, StringComparison.OrdinalIgnoreCase));
+                if (player != null)
+                    OnPlayerTell?.Invoke($"{playerName}@{player.Server}", GetHelpText(engine.CurrentTable));
                 break;
 
             case "BANK":
@@ -375,13 +381,25 @@ public class CommandParser
     {
         return table.GameType switch
         {
-            GameType.Craps         => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Shooter: >ROLL | Come-out: >BET PASS [amt]  >BET DONTPASS [amt] | After point: >BET FIELD [amt]  >BET BIG6 [amt]  >BET BIG8 [amt]  >BET PLACE [4/5/6/8/9/10] [amt] | 7/11=Natural, 2/3=Craps, 12=Push.",
-            GameType.Baccarat      => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Baccarat: >BET PLAYER [amt]  >BET BANKER [amt]  >BET TIE [amt] | Admin: >DEAL | Closest to 9 wins. Player 1:1, Banker 1:1, Tie 8:1.",
-            GameType.Roulette      => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Roulette: >BET [amt] ON [targets] | Admin: >SPIN | Targets: RED BLACK EVEN ODD 0-36.",
-            GameType.ChocoboRacing => $"Min: {table.MinBet}G Max: {table.MaxBet}G | Chocobo: >BET [1-8 or name] [amt] | Admin: >OPEN (open betting) >START (start race) | 8 racers, 30s race. Odds: #1=2x #2=2.5x #3=3x #4=3.5x #5=4.5x #6=5x #7=7x #8=9x",
-            GameType.TexasHoldEm  => $"SB: {table.PokerSmallBlind}G  BB: {table.PokerSmallBlind * 2}G | >CALL  >CHECK  >RAISE [+amt]  >FOLD  >ALL IN | Admin: >DEAL (new hand)  >TABLE (seat order)",
-            _                      => $"Min: {table.MinBet}G Max: {table.MaxBet}G | BJ: >HIT >STAND >DOUBLE >SPLIT >INSURANCE >BET [amt] | >BANK >AFK >HELP"
+            GameType.Craps         => $"[CRAPS RULES] Come-out: 7/11=Natural (Pass wins, DP loses). 2/3=Craps (DP wins, Pass loses). 12=Pass loses, DP push. 4-10 sets the POINT. Point round: roll Point=Pass wins; 7-out=DP wins, Pass/Place/Big6/Big8 lose. FIELD: 2/12 pay 2:1, 3/4/9/10/11=1:1, 5/6/7/8=lose. BIG 6/8: pays 1:1 before 7. PLACE: 4/10=9:5, 5/9=7:5, 6/8=7:6. Limits: {table.MinBet}-{table.MaxBet}G.",
+            GameType.Baccarat      => $"[BACCARAT RULES] Closest to 9 wins. Ace=1, 2-9=face, 10/J/Q/K=0. Score=sum mod 10. Natural: 8 or 9 on first two cards ends the round. Player draws on 0-5, stands 6-7. Banker follows standard third-card rules. Payouts: Player 1:1, Banker 1:1, Tie 8:1. Limits: {table.MinBet}-{table.MaxBet}G.",
+            GameType.Roulette      => $"[ROULETTE RULES] Wheel has 37 slots (0-36). 0=green, others alternate red/black. Straight numbers pay 35:1. RED/BLACK, EVEN/ODD, 1-18/19-36 pay 1:1. 1ST/2ND/3RD dozen pay 2:1. COL1/COL2/COL3 pay 2:1. Limits: {table.MinBet}-{table.MaxBet}G.",
+            GameType.ChocoboRacing => $"[CHOCOBO RULES] 8 racers run a 30-second race. Each has Speed (early), Endurance (late), and X-Factor (randomness). Winning bet pays your stake × the racer's odds. Limits: {table.MinBet}-{table.MaxBet}G.",
+            GameType.TexasHoldEm  => $"[POKER RULES] Texas Hold'Em. Each player gets 2 hole cards + 5 community cards over 4 betting rounds (Pre-Flop, Flop, Turn, River). Best 5-card hand wins the pot. SB={table.PokerSmallBlind}G, BB={table.PokerSmallBlind * 2}G. Hands: Royal Flush > Straight Flush > 4-of-a-kind > Full House > Flush > Straight > 3-of-a-kind > Two Pair > Pair > High Card.",
+            _                      => $"[BLACKJACK RULES] Beat the dealer without exceeding 21. Ace=1 or 11, face cards=10. Blackjack (Ace+10) pays 1.5x bet. Dealer hits on soft 16 or less. Split matching pairs into two hands. Double Down: double your bet, receive exactly one more card. Insurance: when dealer shows Ace, pays 2:1 if dealer has Blackjack. Limits: {table.MinBet}-{table.MaxBet}G."
+        };
+    }
+
+    private string GetHelpText(Table table)
+    {
+        return table.GameType switch
+        {
+            GameType.Craps         => "[CRAPS COMMANDS] >BET PASS [amt]  >BET DONTPASS [amt]  >BET FIELD [amt]  >BET BIG6 [amt]  >BET BIG8 [amt]  >BET PLACE [4/5/6/8/9/10] [amt]  >ROLL (shooter only)  | >BANK  >AFK  >RULES",
+            GameType.Baccarat      => "[BACCARAT COMMANDS] >BET PLAYER [amt]  >BET BANKER [amt]  >BET TIE [amt]  | >BANK  >AFK  >RULES",
+            GameType.Roulette      => "[ROULETTE COMMANDS] >BET [amt] ON [target]  — targets: RED BLACK EVEN ODD 1-18 19-36 1ST 2ND 3RD COL1 COL2 COL3 or any number 0-36  | >BANK  >AFK  >RULES",
+            GameType.ChocoboRacing => "[CHOCOBO COMMANDS] >BET [#1-8 or racer name] [amt]  | >BANK  >AFK  >RULES",
+            GameType.TexasHoldEm  => "[POKER COMMANDS] >CALL  >CHECK  >RAISE [amt]  >FOLD  >ALL IN  | >BANK  >AFK  >RULES",
+            _                      => "[BLACKJACK COMMANDS] >HIT  >STAND  >DOUBLE  >SPLIT  >INSURANCE  >BET [amt]  | >BANK  >AFK  >RULES"
         };
     }
 }
-

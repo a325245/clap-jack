@@ -227,14 +227,14 @@ namespace SamplePlugin
             // ── Spin button - dealer controlled, no timer ───────────────────────
             if (table.GameState == Models.GameState.Lobby && table.RouletteSpinState == Models.RouletteSpinState.Idle)
             {
-                if (ImGui.Button("🎡  SPIN  ", new Vector2(120, 36)))
+                if (ImGui.Button("SPIN  ", new Vector2(120, 36)))
                     roulette.StartSpin("Dealer", out _);
                 ImGui.SameLine();
                 ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1), "Place bets, then hit SPIN.");
             }
             else if (table.RouletteSpinState == Models.RouletteSpinState.Spinning)
             {
-                ImGui.TextColored(new Vector4(1, 0.8f, 0, 1), "🎡  No more bets! Wheel spinning...");
+                ImGui.TextColored(new Vector4(1, 0.8f, 0, 1), "No more bets! Wheel spinning...");
             }
             else if (table.RouletteSpinState == Models.RouletteSpinState.Resolving)
             {
@@ -550,11 +550,11 @@ namespace SamplePlugin
             {
                 if (!table.CrapsBettingPhase)
                 {
-                    if (ImGui.Button("📋  OPEN BETS  ", new Vector2(140, 32)))
+                    if (ImGui.Button("OPEN BETS  ", new Vector2(140, 32)))
                         craps.StartBettingPhase();
                     ImGui.SameLine();
                 }
-                if (ImGui.Button("🎲  ROLL  ", new Vector2(120, 32)))
+                if (ImGui.Button("ROLL  ", new Vector2(120, 32)))
                     craps.StartRoll(out _);
                 ImGui.SameLine();
                 string hint = table.CrapsPhase == Models.CrapsPhase.PointEstablished
@@ -564,7 +564,7 @@ namespace SamplePlugin
             }
             else
             {
-                ImGui.TextColored(new Vector4(1, 0.8f, 0, 1), "🎲  Rolling...");
+                ImGui.TextColored(new Vector4(1, 0.8f, 0, 1), "Rolling...");
             }
 
             ImGui.Separator();
@@ -3030,7 +3030,7 @@ namespace SamplePlugin
 
         private void DisplayTableStatus()
         {
-            var status = "[BLACKJACK] TABLE STATUS:\n";
+            var status = "BLACKJACK TABLE STATUS:\n";
             foreach (var player in engine.CurrentTable.Players.Values)
             {
                 status += $"  {player.Name} ({player.Server}) - Bank: {player.Bank}, Bet: {player.PersistentBet}, AFK: {player.IsAfk}\n";

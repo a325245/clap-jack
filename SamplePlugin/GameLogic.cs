@@ -180,7 +180,7 @@ namespace SamplePlugin
             Deck.Reset();
             GameLog.Clear();
             LogAction("Table opened");
-            OnChatMessage?.Invoke("[BLACKJACK] ♠ TABLE NOW OPEN ♠");
+            OnChatMessage?.Invoke("[BLACKJACK] TABLE NOW OPEN");
         }
 
         public void AddPlayer(string name)
@@ -188,7 +188,7 @@ namespace SamplePlugin
             if (Players.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) return;
             Players.Add(new PlayerSession { Name = name, Server = "Ultros" });
             LogAction($"Player added: {name}");
-            OnChatMessage?.Invoke($" ♠ {name} has been added to the table! ({Players.Count} player{(Players.Count != 1 ? "s" : "")})");
+            OnChatMessage?.Invoke($" {name} has been added to the table! ({Players.Count} player{(Players.Count != 1 ? "s" : "")})");
         }
 
         public int GetTimeRemainingSeconds()
@@ -237,7 +237,7 @@ namespace SamplePlugin
                 // All players have acted
                 State = GameState.DealerTurn;
                 CurrentPlayerTurn = null;
-                OnChatMessage?.Invoke(" ♠ All players have acted - Dealer's turn! ♠");
+                OnChatMessage?.Invoke(" All players have acted - Dealer's turn!");
                 OnAllPlayersStanding?.Invoke();
             }
             else
@@ -255,7 +255,7 @@ namespace SamplePlugin
                 // Check for blackjack - skip turn
                 if (player.Hand.IsBlackjack)
                 {
-                    OnChatMessage?.Invoke($" ♠ {player.Name} has BLACKJACK! Skipping turn. ♠");
+                    OnChatMessage?.Invoke($" {player.Name} has BLACKJACK! Skipping turn.");
                     player.IsStanding = true;
                     NextPlayerTurn();  // Recursively move to next
                     return;
@@ -263,7 +263,7 @@ namespace SamplePlugin
 
                 CurrentPlayerTurn = player.Name;
                 CurrentTurnStart = DateTime.Now;
-                OnChatMessage?.Invoke($" ♠ {player.Name}'s turn! (Timer: {TurnTimerSeconds}s) ♠");
+                OnChatMessage?.Invoke($" {player.Name}'s turn! (Timer: {TurnTimerSeconds}s)");
                 OnChatMessage?.Invoke($"  {player.Name}: {string.Join(", ", player.Hand.Cards)} (Total: {player.Hand.GetTotal()})");
                 OnUIUpdate?.Invoke();
             }
@@ -280,7 +280,7 @@ namespace SamplePlugin
             var removed = Players.RemoveAll(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
             if (removed > 0)
             {
-                OnChatMessage?.Invoke($" ♠ {name} has left the table.");
+                OnChatMessage?.Invoke($" {name} has left the table.");
             }
         }
 
@@ -311,16 +311,16 @@ namespace SamplePlugin
             {
                 if (amount < MinBet || amount > MaxBet)
                 {
-                    OnChatMessage?.Invoke($" ♠ {name}: Bet must be between {MinBet} and {MaxBet} ♠");
+                    OnChatMessage?.Invoke($" {name}: Bet must be between {MinBet} and {MaxBet}");
                 }
                 else if (amount > p.Bank)
                 {
-                    OnChatMessage?.Invoke($" ♠ {name}: Insufficient funds! Bank: {p.Bank}, Bet: {amount} ♠");
+                    OnChatMessage?.Invoke($" {name}: Insufficient funds! Bank: {p.Bank}, Bet: {amount}");
                 }
                 else
                 {
                     p.CurrentBet = amount;
-                    OnChatMessage?.Invoke($" ♠ {name} bets {amount} ♠");
+                    OnChatMessage?.Invoke($" {name} bets {amount}");
                 }
             }
         }
@@ -331,7 +331,7 @@ namespace SamplePlugin
             if (p != null)
             {
                 p.IsAFK = isAFK;
-                OnChatMessage?.Invoke($" ♠ {name} is now {(isAFK ? "AFK" : "ACTIVE")} ♠");
+                OnChatMessage?.Invoke($" {name} is now {(isAFK ? "AFK" : "ACTIVE")}");
             }
         }
 
@@ -371,7 +371,7 @@ namespace SamplePlugin
         public string GetGameStatus()
         {
             var playerInfo = Players.Select(p => $"{p.Name}(Bank:{p.Bank},Bet:{p.CurrentBet})").ToList();
-            return $" ♠ STATUS: Limits: {MinBet}-{MaxBet} | Timer: {TurnTimerSeconds}s | Players: {string.Join(" | ", playerInfo)}";
+            return $" STATUS: Limits: {MinBet}-{MaxBet} | Timer: {TurnTimerSeconds}s | Players: {string.Join(" | ", playerInfo)}";
         }
 
         public string GetRulesText()
@@ -428,7 +428,7 @@ namespace SamplePlugin
             Deck.Reset();
             DealerHand.Clear();
 
-            OnChatMessage?.Invoke($" ♠ DEALING HANDS... ♠");
+            OnChatMessage?.Invoke($" DEALING HANDS...");
 
             // Only deal to non-AFK players
             foreach (var p in Players)
@@ -470,7 +470,7 @@ namespace SamplePlugin
                 if (p.IsBust)
                 {
                     p.IsStanding = true;
-                    OnChatMessage?.Invoke($"    ✗ {p.Name} BUSTS! ✗");
+                    OnChatMessage?.Invoke($"    {p.Name} BUSTS!");
                     NextPlayerTurn();
                 }
             }
@@ -508,7 +508,7 @@ namespace SamplePlugin
                 if (p.IsBust)
                 {
                     p.IsStanding = true;
-                    OnChatMessage?.Invoke($"    ✗ {p.Name} BUSTS! ✗");
+                    OnChatMessage?.Invoke($"    {p.Name} BUSTS!");
                 }
                 else
                 {
@@ -541,7 +541,7 @@ namespace SamplePlugin
                 if (p.IsBust)
                 {
                     p.IsStanding = true;
-                    OnChatMessage?.Invoke($"    ✗ {p.Name} BUSTS! ✗");
+                    OnChatMessage?.Invoke($"    {p.Name} BUSTS!");
                 }
                 NextPlayerTurn();
             }
@@ -552,7 +552,7 @@ namespace SamplePlugin
             if (State == GameState.Playing && Players.All(p => p.IsStanding))
             {
                 State = GameState.DealerTurn;
-                OnChatMessage?.Invoke(" ♠ All players standing - Dealer automatically plays! ♠");
+                OnChatMessage?.Invoke(" All players standing - Dealer automatically plays!");
 
                 // Automatically trigger dealer play after a brief delay
                 OnAllPlayersStanding?.Invoke();
@@ -574,7 +574,7 @@ namespace SamplePlugin
 
             if (DealerHand.GetTotal() > 21)
             {
-                OnChatMessage?.Invoke($"  ✗ Dealer BUSTS at {DealerHand.GetTotal()}! ✗");
+                OnChatMessage?.Invoke($"  Dealer BUSTS at {DealerHand.GetTotal()}!");
             }
             else
             {
@@ -587,7 +587,7 @@ namespace SamplePlugin
 
         private void DisplayResults()
         {
-            OnChatMessage?.Invoke(" ♠ FINAL RESULTS ♠");
+            OnChatMessage?.Invoke(" FINAL RESULTS");
 
             int dTotal = DealerHand.GetTotal();
 
@@ -648,7 +648,7 @@ namespace SamplePlugin
             }
 
             OnUIUpdate?.Invoke();
-            OnChatMessage?.Invoke(" ♠ Round complete!");
+            OnChatMessage?.Invoke(" Round complete!");
         }
     }
 }

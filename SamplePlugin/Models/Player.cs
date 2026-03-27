@@ -10,7 +10,19 @@ public class Player
     public string Server { get; set; } = string.Empty;
     public int Bank { get; set; } = 10000;
     public int PersistentBet { get; set; } = 0;
-    public bool IsAfk { get; set; } = false;
+    private bool _isAfk = false;
+    public bool IsAfk
+    {
+        get => _isAfk;
+        set
+        {
+            if (value && !_isAfk)  { AfkSince = DateTime.Now; AfkNotifiedMinutes = 0; }
+            else if (!value)       { AfkSince = null;         AfkNotifiedMinutes = 0; }
+            _isAfk = value;
+        }
+    }
+    public DateTime? AfkSince { get; private set; }
+    public int AfkNotifiedMinutes { get; set; } = 0;
     public bool IsStanding { get; set; } = false;
 
     // Enhanced hand management
