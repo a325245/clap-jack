@@ -25,6 +25,47 @@ namespace SamplePlugin
         // Quick add fields
         private string quickAddPlayerName = string.Empty;
 
+        // Session snapshot (resume feature)
+        private Models.GameState _lastBJState  = Models.GameState.Lobby;
+        private Models.SessionSnapshot? _sessionSnapshot;
+        private bool _snapshotLoaded = false;
+        private string SnapshotPath =>
+            System.IO.Path.Combine(plugin.PluginInterface.ConfigDirectory.FullName, "session_snapshot.json");
+
+        private void SaveSessionSnapshot()
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(plugin.PluginInterface.ConfigDirectory.FullName);
+                var snap = engine.CreateSnapshot();
+                var json = System.Text.Json.JsonSerializer.Serialize(snap,
+                    new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                System.IO.File.WriteAllText(SnapshotPath, json);
+                _sessionSnapshot  = snap;
+                _snapshotLoaded   = true;
+            }
+            catch { }
+        }
+
+        private Models.SessionSnapshot? GetCachedSnapshot()
+        {
+            if (!_snapshotLoaded)
+            {
+                try
+                {
+                    if (System.IO.File.Exists(SnapshotPath))
+                    {
+                        var json = System.IO.File.ReadAllText(SnapshotPath);
+                        _sessionSnapshot = System.Text.Json.JsonSerializer
+                            .Deserialize<Models.SessionSnapshot>(json);
+                    }
+                }
+                catch { _sessionSnapshot = null; }
+                _snapshotLoaded = true;
+            }
+            return _sessionSnapshot;
+        }
+
         // Debug chat log - stores recent raw chat messages with their types
         private Queue<string> DebugChatLog { get; } = new();
         private const int MaxDebugLines = 20;
@@ -36,6 +77,7 @@ namespace SamplePlugin
         }
 
         private bool _showPokerHoleCards = true;
+        private int  _viewMode = 0; // 0=Dealer  1=Player View
 
         public PluginUI(Plugin plugin, BlackjackEngine engine)
         {
@@ -54,6 +96,16 @@ namespace SamplePlugin
 
         public void Draw()
         {
+            // Auto-save session snapshot when a blackjack round completes
+            var _bjState = engine.CurrentTable.GameState;
+            if (_lastBJState == Models.GameState.Playing &&
+                _bjState     == Models.GameState.Lobby   &&
+                engine.CurrentTable.GameType == Models.GameType.Blackjack)
+            {
+                SaveSessionSnapshot();
+            }
+            _lastBJState = _bjState;
+
             if (!IsVisible) return;
 
             bool isVisible = IsVisible;
@@ -156,7 +208,49 @@ namespace SamplePlugin
                 plugin.PokerEngine.ChatMode    = (Models.ChatMode)chatMode;
             }
 
+            // Echo player actions toggle
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), "  Echo:");
+            ImGui.SameLine();
+            bool _echo = engine.EchoPlayerActions;
+            if (ImGui.Checkbox("##echoactions", ref _echo))
+                engine.EchoPlayerActions = _echo;
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Show player action confirmations in chat (hits, doubles, splits)");
+
+            // View mode selector
+            ImGui.SameLine();
+            ImGui.Spacing(); ImGui.SameLine();
+            ImGui.Text("View:");
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(110);
+            string[] viewModes = { "Dealer", "Player View" };
+            ImGui.Combo("##viewmode", ref _viewMode, viewModes, viewModes.Length);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Switch between the dealer control panel and the player-side view");
+
             ImGui.Separator();
+
+            // Auto-switch to player view when a game is detected from someone else
+            {
+                string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+                var pvState = plugin.ChatParser.State;
+                if (pvState.ShouldAutoSwitch)
+                {
+                    pvState.ShouldAutoSwitch = false;
+                    bool dealerIsOther = !string.IsNullOrEmpty(pvState.DealerName) &&
+                        !pvState.DealerName.Equals(myName, StringComparison.OrdinalIgnoreCase);
+                    if (_viewMode == 0 && dealerIsOther)
+                        _viewMode = 1;
+                }
+            }
+
+            if (_viewMode == 1)
+            {
+                string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+                plugin.PlayerView.DrawContent(myName);
+                return;
+            }
 
             if (engine.CurrentTable.GameType == Models.GameType.None)
                 DrawNoneInterface();
@@ -442,19 +536,39 @@ namespace SamplePlugin
 
         private void DrawRouletteNumberGrid()
         {
+            var table    = engine.CurrentTable;
             var drawList = ImGui.GetWindowDrawList();
             var startPos = ImGui.GetCursorScreenPos();
             float cellW = 28, cellH = 22, pad = 2;
+            var   mouse  = ImGui.GetIO().MousePos;
+
+            // Build bet map: target → list of "Name (amt)" strings
+            var betMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var player in table.Players.Values)
+                foreach (var bet in player.RouletteBets)
+                {
+                    if (!betMap.TryGetValue(bet.Target, out var lst))
+                        betMap[bet.Target] = lst = new();
+                    lst.Add($"{player.Name} ({bet.Amount}\uE049)");
+                }
+
+            string? ttTitle = null;
+            string? ttBody  = null;
 
             // 0 cell on the left spanning all 3 rows
             float zeroH = cellH * 3 + pad * 2;
             var zeroTL = startPos;
             var zeroBR = new Vector2(startPos.X + cellW, startPos.Y + zeroH);
-            bool zeroWin = engine.CurrentTable.RouletteResult == 0 && engine.CurrentTable.RouletteSpinState == Models.RouletteSpinState.Idle && engine.CurrentTable.RouletteResult.HasValue;
+            bool zeroWin = table.RouletteResult == 0 && table.RouletteSpinState == Models.RouletteSpinState.Idle && table.RouletteResult.HasValue;
             drawList.AddRectFilled(zeroTL, zeroBR, zeroWin ? 0xFFFFFFFF : 0xFF00AA00, 3);
             drawList.AddRect(zeroTL, zeroBR, 0xFF888888, 3);
             var zeroSz = ImGui.CalcTextSize("0");
             drawList.AddText(new Vector2(zeroTL.X + cellW * 0.5f - zeroSz.X * 0.5f, zeroTL.Y + zeroH * 0.5f - zeroSz.Y * 0.5f), zeroWin ? 0xFF000000 : 0xFFFFFFFF, "0");
+            if (betMap.ContainsKey("0") && !zeroWin)
+                drawList.AddCircleFilled(new Vector2(zeroTL.X + cellW * 0.5f, zeroTL.Y + zeroH * 0.5f), 6f, 0xCCFFCC22, 12);
+            if (mouse.X >= zeroTL.X && mouse.X < zeroBR.X && mouse.Y >= zeroTL.Y && mouse.Y < zeroBR.Y
+                && betMap.TryGetValue("0", out var z0p))
+            { ttTitle = "0"; ttBody = string.Join("\n", z0p); }
 
             // 3 rows x 12 columns of numbers
             for (int row = 0; row < 3; row++)
@@ -464,10 +578,11 @@ namespace SamplePlugin
                     int n = RouletteGrid[row, col];
                     float x = startPos.X + cellW + pad + col * (cellW + pad);
                     float y = startPos.Y + row * (cellH + pad);
+                    string ns = n.ToString();
 
-                    bool isWin = engine.CurrentTable.RouletteResult == n &&
-                                 engine.CurrentTable.RouletteSpinState == Models.RouletteSpinState.Idle &&
-                                 engine.CurrentTable.RouletteResult.HasValue;
+                    bool isWin = table.RouletteResult == n &&
+                                 table.RouletteSpinState == Models.RouletteSpinState.Idle &&
+                                 table.RouletteResult.HasValue;
 
                     uint bg = isWin ? 0xFFFFFFFF :
                               Array.IndexOf(RedNumbers, n) >= 0 ? 0xFF2233CC : 0xFF111111;
@@ -475,17 +590,30 @@ namespace SamplePlugin
                     drawList.AddRectFilled(new Vector2(x, y), new Vector2(x + cellW, y + cellH), bg, 2);
                     drawList.AddRect(new Vector2(x, y), new Vector2(x + cellW, y + cellH), 0xFF555555, 2);
 
-                    var ns  = n.ToString();
                     var nSz = ImGui.CalcTextSize(ns);
                     drawList.AddText(
                         new Vector2(x + cellW * 0.5f - nSz.X * 0.5f, y + cellH * 0.5f - nSz.Y * 0.5f),
                         isWin ? 0xFF000000 : 0xFFFFFFFF, ns);
+
+                    if (betMap.ContainsKey(ns) && !isWin)
+                        drawList.AddCircleFilled(new Vector2(x + cellW * 0.5f, y + cellH * 0.5f), 6f, 0xCCFFCC22, 12);
+
+                    if (mouse.X >= x && mouse.X < x + cellW && mouse.Y >= y && mouse.Y < y + cellH
+                        && betMap.TryGetValue(ns, out var nbp))
+                    { ttTitle = ns; ttBody = string.Join("\n", nbp); }
                 }
             }
 
             // Advance cursor past the grid
-            float gridW = cellW + pad + 12 * (cellW + pad);
             ImGui.SetCursorScreenPos(new Vector2(startPos.X, startPos.Y + zeroH + 8));
+
+            if (ttTitle != null)
+            {
+                ImGui.BeginTooltip();
+                ImGui.TextColored(new Vector4(1f,0.84f,0f,1f), ttTitle);
+                if (ttBody != null) ImGui.TextUnformatted(ttBody);
+                ImGui.EndTooltip();
+            }
         }
 
         // ── CRAPS UI ─────────────────────────────────────────────────────────────
@@ -684,6 +812,17 @@ namespace SamplePlugin
 
             const float W = 490f, H = 134f, pad = 4f;
 
+            // Aggregate bets for dot display
+            int totalDP    = table.CrapsBets.Values.Sum(b => b.DontPassBet);
+            int totalPass  = table.CrapsBets.Values.Sum(b => b.PassLineBet);
+            int totalField = table.CrapsBets.Values.Sum(b => b.FieldBet);
+            int totalBig6  = table.CrapsBets.Values.Sum(b => b.Big6Bet);
+            int totalBig8  = table.CrapsBets.Values.Sum(b => b.Big8Bet);
+            var placeMap   = new Dictionary<int, int>();
+            foreach (var b in table.CrapsBets.Values)
+                foreach (var kv in b.PlaceBets)
+                    placeMap[kv.Key] = placeMap.GetValueOrDefault(kv.Key) + kv.Value;
+
             // Felt background
             drawList.AddRectFilled(pos, pos + new Vector2(W, H), 0xFF1A5C2A, 6f);
             drawList.AddRect(pos, pos + new Vector2(W, H), 0xFFFFD700, 6f, ImDrawFlags.None, 2f);
@@ -692,15 +831,17 @@ namespace SamplePlugin
             float x0 = pos.X + pad;
             float totalW = W - pad * 2;
 
-            // ── Don't Pass bar ───────────────────────────────────────────────────
+            // ── Don't Pass bar ───────────────────────────────────────────────────────────────
             const float dpH = 16f;
             drawList.AddRectFilled(new Vector2(x0, y), new Vector2(x0 + totalW, y + dpH), 0xFF8B1A1A, 3f);
             drawList.AddRect(new Vector2(x0, y), new Vector2(x0 + totalW, y + dpH), 0xFFCC4444, 3f);
             var dpSz = ImGui.CalcTextSize("DON'T PASS");
             drawList.AddText(new Vector2(x0 + totalW * 0.5f - dpSz.X * 0.5f, y + dpH * 0.5f - dpSz.Y * 0.5f), 0xFFFFFFFF, "DON'T PASS");
+            if (totalDP > 0)
+                drawList.AddCircleFilled(new Vector2(x0 + totalW - 8f, y + dpH * 0.5f), 5f, 0xCCFFCC22u, 10);
             y += dpH + 2f;
 
-            // ── Place number boxes + Big 6/8 ─────────────────────────────────────
+            // ── Place number boxes + Big 6/8 ─────────────────────────────────────────────────────
             int[] placeNums = { 4, 5, 6, 8, 9, 10 };
             const float bigSideW = 56f;
             float boxW = (totalW - bigSideW - 2f) / 6f;
@@ -724,6 +865,8 @@ namespace SamplePlugin
                     var onSz = ImGui.CalcTextSize("ON");
                     drawList.AddText(new Vector2(bx + boxW - 8f - onSz.X * 0.5f, y + 8f - onSz.Y * 0.5f), 0xFF000000, "ON");
                 }
+                if (placeMap.GetValueOrDefault(n) > 0)
+                    drawList.AddCircleFilled(new Vector2(bx + 8f, y + boxH - 8f), 5f, 0xCCFFCC22u, 10);
             }
             // Big 6/8 box
             float bigX = x0 + 6f * (boxW + 1f) + 1f;
@@ -733,15 +876,21 @@ namespace SamplePlugin
             var big68Sz = ImGui.CalcTextSize("6 | 8");
             drawList.AddText(new Vector2(bigX + bigSideW * 0.5f - bigSz.X * 0.5f, y + 4f), 0xFFCCEEFF, "BIG");
             drawList.AddText(new Vector2(bigX + bigSideW * 0.5f - big68Sz.X * 0.5f, y + 4f + bigSz.Y + 1f), 0xFFFFFFFF, "6 | 8");
+            if (totalBig6 > 0)
+                drawList.AddCircleFilled(new Vector2(bigX + 8f,              y + boxH - 8f), 5f, 0xCCFFCC22u, 10);
+            if (totalBig8 > 0)
+                drawList.AddCircleFilled(new Vector2(bigX + bigSideW - 8f,  y + boxH - 8f), 5f, 0xCCFFCC22u, 10);
             y += boxH + 2f;
 
-            // ── Pass Line + Field strip ──────────────────────────────────────────
+            // ── Pass Line + Field strip ──────────────────────────────────────────────────────
             const float stripH = 22f;
             float passW = totalW * 0.68f;
             drawList.AddRectFilled(new Vector2(x0, y), new Vector2(x0 + passW, y + stripH), 0xFF0D5C1A, 3f);
             drawList.AddRect(new Vector2(x0, y), new Vector2(x0 + passW, y + stripH), 0xFF44AA44, 3f);
             var plSz = ImGui.CalcTextSize("PASS LINE");
             drawList.AddText(new Vector2(x0 + passW * 0.5f - plSz.X * 0.5f, y + stripH * 0.5f - plSz.Y * 0.5f), 0xFFFFFFFF, "PASS LINE");
+            if (totalPass > 0)
+                drawList.AddCircleFilled(new Vector2(x0 + passW - 8f, y + stripH * 0.5f), 5f, 0xCCFFCC22u, 10);
 
             float fieldX = x0 + passW + 2f;
             float fieldW = totalW - passW - 2f;
@@ -749,9 +898,11 @@ namespace SamplePlugin
             drawList.AddRect(new Vector2(fieldX, y), new Vector2(fieldX + fieldW, y + stripH), 0xFFAAAA44, 3f);
             var fSz = ImGui.CalcTextSize("FIELD");
             drawList.AddText(new Vector2(fieldX + fieldW * 0.5f - fSz.X * 0.5f, y + stripH * 0.5f - fSz.Y * 0.5f), 0xFFFFFFEE, "FIELD");
+            if (totalField > 0)
+                drawList.AddCircleFilled(new Vector2(fieldX + fieldW - 8f, y + stripH * 0.5f), 5f, 0xCCFFCC22u, 10);
             y += stripH + 2f;
 
-            // ── Shooter label + OFF puck ─────────────────────────────────────────
+            // ── Shooter label + OFF puck ───────────────────────────────────────────────────────
             float infoY = y;
             float infoH = (pos.Y + H) - infoY - pad;
             string shooterLabel = string.IsNullOrEmpty(table.CrapsShooterName)
@@ -1261,18 +1412,19 @@ namespace SamplePlugin
                 }
             }
             ImGui.SameLine();
-            if (ImGui.Button("Add Target", new Vector2(100, 0)))
-            {
-                // TODO: Add current target functionality
-                ImGui.OpenPopup("TargetNotImplemented");
-            }
+            if (ImGui.Button("Add Party", new Vector2(100, 0)))
+                plugin.AddPartyToTable();
 
-            if (ImGui.BeginPopup("TargetNotImplemented"))
+            var _snap = GetCachedSnapshot();
+            if (_snap != null)
             {
-                ImGui.Text("Target detection not yet implemented.");
-                ImGui.Text("For now, manually type the name above.");
-                if (ImGui.Button("OK")) ImGui.CloseCurrentPopup();
-                ImGui.EndPopup();
+                ImGui.SameLine();
+                ImGui.PushStyleColor(ImGuiCol.Button,        new Vector4(0.10f, 0.30f, 0.60f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.20f, 0.45f, 0.80f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive,  new Vector4(0.30f, 0.55f, 1.00f, 1f));
+                if (ImGui.Button($"\u21a9 Restore ({_snap.SavedAt:HH:mm}, {_snap.Players.Count}p)"))
+                    engine.RestoreSnapshot(_snap);
+                ImGui.PopStyleColor(3);
             }
 
             ImGui.Separator();
@@ -1359,6 +1511,14 @@ namespace SamplePlugin
                     if (isCurrentTurn)
                     {
                         ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0.5f, 0, 0.3f)));
+                    }
+
+                    // Dim row for kicked players
+                    if (player.IsKicked)
+                    {
+                        ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0,
+                            ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.12f, 0.12f, 1f)));
+                        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.35f, 0.35f, 0.35f, 1f));
                     }
 
                     // Name Column
@@ -1628,26 +1788,38 @@ namespace SamplePlugin
 
                     // Actions Column
                     ImGui.TableSetColumnIndex(c_actions);
-                    if (ImGui.Button($"Kick##kick{i}", new Vector2(50, 0)))
+                    if (player.IsKicked)
                     {
-                        engine.RemovePlayer(player.Name);
-                        editingName.Remove(playerKey);
-                        editingServer.Remove(playerKey);
-                        editingBank.Remove(playerKey);
-                        editingBet.Remove(playerKey);
+                        ImGui.TextColored(new Vector4(0.6f, 0.3f, 0.3f, 1f), "[Kicked]");
+                        ImGui.SameLine();
+                        if (ImGui.Button($"Remove##rm{i}", new Vector2(65, 0)))
+                        {
+                            engine.HardRemovePlayer(player.Name);
+                            editingName.Remove(playerKey);
+                            editingServer.Remove(playerKey);
+                            editingBank.Remove(playerKey);
+                            editingBet.Remove(playerKey);
+                        }
                     }
-                    ImGui.SameLine();
-                    if (ImGui.Button($"DM##dm{i}", new Vector2(40, 0)))
+                    else
                     {
-                        string betInfo = player.PersistentBet > 0 ? $"Bet: {player.PersistentBet}" : "No bet placed";
-                        int bjNet = player.TotalWinnings;
-                        int rNet = player.RouletteNetGains;
-                        string netInfo = $"net: {(bjNet >= 0 ? "+" : "")}{bjNet}\uE049 | R net: {(rNet >= 0 ? "+" : "")}{rNet}\uE049";
-                        engine.OnPlayerTell?.Invoke($"{player.Name}@{player.Server}", $"Bank: {player.Bank} | {betInfo} | {netInfo}");
+                        if (ImGui.Button($"Kick##kick{i}", new Vector2(50, 0)))
+                            engine.RemovePlayer(player.Name);
+                        ImGui.SameLine();
+                        if (ImGui.Button($"DM##dm{i}", new Vector2(40, 0)))
+                        {
+                            string betInfo = player.PersistentBet > 0 ? $"Bet: {player.PersistentBet}" : "No bet placed";
+                            int bjNet = player.TotalWinnings;
+                            int rNet = player.RouletteNetGains;
+                            string netInfo = $"net: {(bjNet >= 0 ? "+" : "")}{bjNet}\uE049 | R net: {(rNet >= 0 ? "+" : "")}{rNet}\uE049";
+                            engine.OnPlayerTell?.Invoke($"{player.Name}@{player.Server}", $"Bank: {player.Bank} | {betInfo} | {netInfo}");
+                        }
+                        ImGui.SameLine();
+                        if (ImGui.Button($"{(player.IsAfk ? "[AFK]" : "AFK")}##afkbtn{i}", new Vector2(38, 0)))
+                            engine.ToggleAFK(player.Name);
                     }
-                    ImGui.SameLine();
-                    if (ImGui.Button($"{(player.IsAfk ? "[AFK]" : "AFK")}##afkbtn{i}", new Vector2(38, 0)))
-                        engine.ToggleAFK(player.Name);
+
+                    if (player.IsKicked) ImGui.PopStyleColor();
                 }  // end player loop
 
                 ImGui.EndTable();

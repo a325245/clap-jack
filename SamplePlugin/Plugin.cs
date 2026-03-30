@@ -25,6 +25,8 @@ namespace SamplePlugin
 
         [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
         [PluginService] internal static IPluginLog Log { get; private set; } = null!;
+        [PluginService] internal static IPartyList PartyList { get; private set; } = null!;
+        [PluginService] internal static IClientState ClientState { get; private set; } = null!;
 
         public IDalamudPluginInterface PluginInterface { get; init; }
         private ICommandManager CommandManager { get; init; }
@@ -40,6 +42,8 @@ namespace SamplePlugin
         public PokerEngine    PokerEngine   { get; init; }
         public CommandParser CommandParser { get; init; }
         public ChatHandler ChatHandler { get; init; }
+        public Chat.PlayerChatParser ChatParser { get; init; }
+        public PlayerViewWindow PlayerView { get; init; }
         public PluginUI UI { get; init; }
 
         private string AdminName { get; set; } = string.Empty;
@@ -72,6 +76,7 @@ namespace SamplePlugin
             PokerEngine   = new PokerEngine(Engine.CurrentTable);
             CommandParser = new CommandParser(Engine, RouletteEngine, CrapsEngine, BaccaratEngine, ChocoboEngine, PokerEngine);
             ChatHandler = new ChatHandler();
+            ChatParser  = new Chat.PlayerChatParser();
 
             // Wire up roulette events (reuse same send helpers)
             RouletteEngine.OnChatMessage += SendGameMessage;
@@ -108,7 +113,8 @@ namespace SamplePlugin
             CommandParser.OnAdminEcho += SendAdminEcho;
             CommandParser.OnPlayerTell += SendPlayerTell;
 
-            UI = new PluginUI(this, Engine);
+            UI         = new PluginUI(this, Engine);
+            PlayerView = new PlayerViewWindow(this, ChatParser);
 
             CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
             {
@@ -147,6 +153,9 @@ namespace SamplePlugin
 
             // Process command using the clean sender name and correct source channel
             CommandParser.Parse(senderName, text, UI.AdminName, Engine.Mode, sourceChannel);
+
+            // Also feed to player view parser (all channels, isTell for incoming tells)
+            ChatParser.ParseMessage(senderName, text, sourceChannel == ChatChannel.Tell);
         }
 
         // Strips leading non-letter characters (job icons, party markers, etc.) from FFXIV sender names
@@ -187,6 +196,20 @@ namespace SamplePlugin
         private void ToggleMainUI()
         {
             UI.IsVisible = !UI.IsVisible;
+        }
+
+        public void AddPartyToTable()
+        {
+            string? localName = ClientState?.LocalPlayer?.Name.TextValue;
+            foreach (var member in PartyList)
+            {
+                string name = member.Name.TextValue;
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                if (!string.IsNullOrEmpty(localName) &&
+                    name.Equals(localName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                Engine.AddPlayer(name);
+            }
         }
 
         public void SendGameMessage(string message)
@@ -285,10 +308,11 @@ namespace SamplePlugin
             // Process poker turn timer and message queue
             PokerEngine.ProcessTick();
 
-                ProcessAfkEchoes();
-                ProcessMessageQueue();
-                UI.Draw();
-            }
+            ProcessAfkEchoes();
+            ProcessMessageQueue();
+            UI.Draw();
+            PlayerView.Draw();
+        }
 
             private DateTime _lastAfkEchoCheck = DateTime.MinValue;
             private void ProcessAfkEchoes()

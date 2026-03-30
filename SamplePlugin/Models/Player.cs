@@ -24,6 +24,7 @@ public class Player
     public DateTime? AfkSince { get; private set; }
     public int AfkNotifiedMinutes { get; set; } = 0;
     public bool IsStanding { get; set; } = false;
+    public bool IsKicked   { get; set; } = false;
 
     // Enhanced hand management
     public List<List<Card>> Hands { get; set; } = new();
