@@ -40,13 +40,13 @@ namespace SamplePlugin
         public BaccaratEngine BaccaratEngine { get; init; }
         public ChocoboEngine ChocoboEngine { get; init; }
         public PokerEngine    PokerEngine   { get; init; }
+        public UltimaEngine   UltimaEngine  { get; init; }
         public CommandParser CommandParser { get; init; }
         public ChatHandler ChatHandler { get; init; }
         public Chat.PlayerChatParser ChatParser { get; init; }
         public PlayerViewWindow PlayerView { get; init; }
         public PluginUI UI { get; init; }
 
-        private string AdminName { get; set; } = string.Empty;
         private Models.DealerMode Mode { get; set; } = Models.DealerMode.Auto;
 
         // Message queue for delayed output
@@ -74,44 +74,51 @@ namespace SamplePlugin
             BaccaratEngine = new BaccaratEngine(Engine.CurrentTable);
             ChocoboEngine = new ChocoboEngine(Engine.CurrentTable);
             PokerEngine   = new PokerEngine(Engine.CurrentTable);
-            CommandParser = new CommandParser(Engine, RouletteEngine, CrapsEngine, BaccaratEngine, ChocoboEngine, PokerEngine);
+            UltimaEngine  = new UltimaEngine(Engine.CurrentTable);
+            CommandParser = new CommandParser(Engine, RouletteEngine, CrapsEngine, BaccaratEngine, ChocoboEngine, PokerEngine, UltimaEngine);
             ChatHandler = new ChatHandler();
             ChatParser  = new Chat.PlayerChatParser();
 
             // Wire up roulette events (reuse same send helpers)
             RouletteEngine.OnChatMessage += SendGameMessage;
             RouletteEngine.OnPlayerTell += SendPlayerTell;
-            RouletteEngine.OnUIUpdate += () => { };
+            RouletteEngine.OnUIUpdate += OnAnyEngineUpdate;
 
             // Wire up craps events
             CrapsEngine.OnChatMessage += SendGameMessage;
             CrapsEngine.OnPlayerTell += SendPlayerTell;
-            CrapsEngine.OnUIUpdate += () => { };
+            CrapsEngine.OnUIUpdate += OnAnyEngineUpdate;
 
             // Wire up baccarat events
             BaccaratEngine.OnChatMessage += SendGameMessage;
             BaccaratEngine.OnPlayerTell += SendPlayerTell;
-            BaccaratEngine.OnUIUpdate += () => { };
+            BaccaratEngine.OnUIUpdate += OnAnyEngineUpdate;
 
             // Wire up chocobo events
             ChocoboEngine.OnChatMessage += SendGameMessage;
             ChocoboEngine.OnPlayerTell += SendPlayerTell;
-            ChocoboEngine.OnUIUpdate += () => { };
+            ChocoboEngine.OnUIUpdate += OnAnyEngineUpdate;
 
             // Wire up poker events
             PokerEngine.OnChatMessage += SendGameMessage;
             PokerEngine.OnPlayerTell  += SendPlayerTell;
-            PokerEngine.OnUIUpdate    += () => { };
+            PokerEngine.OnUIUpdate    += OnAnyEngineUpdate;
+
+            // Wire up ultima events
+            UltimaEngine.OnChatMessage += SendGameMessage;
+            UltimaEngine.OnPlayerTell  += SendPlayerTell;
+            UltimaEngine.OnUIUpdate    += OnAnyEngineUpdate;
 
             // Wire up callbacks
             Engine.OnChatMessage += SendGameMessage;
             Engine.OnAdminEcho += SendAdminEcho;
             Engine.OnPlayerTell += SendPlayerTell;
-            Engine.OnUIUpdate += () => { };
+            Engine.OnUIUpdate += OnAnyEngineUpdate;
 
             CommandParser.OnChatMessage += SendGameMessage;
             CommandParser.OnAdminEcho += SendAdminEcho;
             CommandParser.OnPlayerTell += SendPlayerTell;
+            CommandParser.ResolveServer = ResolvePlayerServer;
 
             UI         = new PluginUI(this, Engine);
             PlayerView = new PlayerViewWindow(this, ChatParser);
@@ -154,8 +161,37 @@ namespace SamplePlugin
             // Process command using the clean sender name and correct source channel
             CommandParser.Parse(senderName, text, UI.AdminName, Engine.Mode, sourceChannel);
 
-            // Also feed to player view parser (all channels, isTell for incoming tells)
-            ChatParser.ParseMessage(senderName, text, sourceChannel == ChatChannel.Tell);
+            // After any command is processed, mirror the local player's entire Ultima
+            // view state from the engine. This covers hand, top card, current player, card
+            // counts, and winner — all of which would otherwise rely on a tell-to-self that
+            // never arrives as TellIncoming.
+            if (Engine.CurrentTable.GameType == Models.GameType.Ultima ||
+                Engine.CurrentTable.UltimaPhase == Models.UltimaPhase.Complete)
+            {
+                var t = Engine.CurrentTable;
+                var s = ChatParser.State;
+                string myName = ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+                if (!string.IsNullOrEmpty(myName) && t.UltimaHands.TryGetValue(myName, out var myHand))
+                    s.UltimaHand = new List<Models.UltimaCard>(myHand);
+                s.UltimaTopCard     = t.UltimaTopCard;
+                s.UltimaActiveColor = t.UltimaActiveColor;
+                s.UltimaClockwise   = t.UltimaClockwise;
+                s.UltimaWinner      = t.UltimaWinner;
+                if (t.UltimaPhase == Models.UltimaPhase.Playing &&
+                    t.UltimaCurrentIndex < t.UltimaPlayerOrder.Count)
+                    s.UltimaCurrentPlayer = t.GetDisplayName(t.UltimaPlayerOrder[t.UltimaCurrentIndex]);
+                // Atomic replacement avoids race with the render thread seeing an empty list
+                s.UltimaPlayerOrder = t.UltimaPlayerOrder.Select(n => t.GetDisplayName(n)).ToList();
+                var newCounts = new Dictionary<string, int>();
+                foreach (var kvp in t.UltimaHands)
+                    newCounts[t.GetDisplayName(kvp.Key)] = kvp.Value.Count;
+                s.UltimaCardCounts = newCounts;
+            }
+
+            // Feed to player-view parser. ONLY TellIncoming contains our own hand/cards.
+            // TellOutgoing appears when the dealer sends other players their hands and must NOT
+            // be parsed as our own hand data.
+            ChatParser.ParseMessage(senderName, text, type == XivChatType.TellIncoming);
         }
 
         // Strips leading non-letter characters (job icons, party markers, etc.) from FFXIV sender names
@@ -181,6 +217,15 @@ namespace SamplePlugin
             PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUI;
         }
 
+        /// <summary>
+        /// Fired after every dealer action on every engine.
+        /// Auto-saves the session snapshot so the state can be restored at any time.
+        /// </summary>
+        private void OnAnyEngineUpdate()
+        {
+            UI?.AutoSaveSnapshot();
+        }
+
         private void OnCommand(string command, string args)
         {
             // Debug command to show all chat types
@@ -200,15 +245,21 @@ namespace SamplePlugin
 
         public void AddPartyToTable()
         {
+            // Add the local player first
             string? localName = ClientState?.LocalPlayer?.Name.TextValue;
+            if (!string.IsNullOrEmpty(localName))
+            {
+                string? localWorld = ClientState?.LocalPlayer?.HomeWorld.Value.Name.ExtractText();
+                Engine.AddPlayer(string.IsNullOrEmpty(localWorld) ? localName : $"{localName}@{localWorld}");
+            }
+
+            // Add party members with their home world for cross-world tell support
             foreach (var member in PartyList)
             {
                 string name = member.Name.TextValue;
                 if (string.IsNullOrWhiteSpace(name)) continue;
-                if (!string.IsNullOrEmpty(localName) &&
-                    name.Equals(localName, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                Engine.AddPlayer(name);
+                string? world = member.World.Value.Name.ExtractText();
+                Engine.AddPlayer(string.IsNullOrEmpty(world) ? name : $"{name}@{world}");
             }
         }
 
@@ -228,6 +279,17 @@ namespace SamplePlugin
         {
             if (string.IsNullOrEmpty(message)) return;
             lock (MessageQueue) { MessageQueue.Enqueue($"/tell {nameAtServer} {message}"); }
+        }
+
+        /// <summary>Resolve a player name to their home world by checking the party list.</summary>
+        private string? ResolvePlayerServer(string playerName)
+        {
+            foreach (var member in PartyList)
+            {
+                if (member.Name.TextValue.Equals(playerName, StringComparison.OrdinalIgnoreCase))
+                    return member.World.Value.Name.ExtractText();
+            }
+            return null;
         }
 
         private void ProcessMessageQueue()
@@ -308,6 +370,9 @@ namespace SamplePlugin
             // Process poker turn timer and message queue
             PokerEngine.ProcessTick();
 
+            // Process ultima turn timer
+            UltimaEngine.ProcessTick();
+
             ProcessAfkEchoes();
             ProcessMessageQueue();
             UI.Draw();
@@ -322,6 +387,7 @@ namespace SamplePlugin
 
                 foreach (var player in Engine.CurrentTable.Players.Values)
                 {
+                    if (player.IsKicked) continue;
                     if (!player.IsAfk || !player.AfkSince.HasValue) continue;
                     int mins = (int)(DateTime.Now - player.AfkSince.Value).TotalMinutes;
                     if (mins > 0 && mins > player.AfkNotifiedMinutes)

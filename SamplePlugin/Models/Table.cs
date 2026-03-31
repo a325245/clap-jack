@@ -91,6 +91,19 @@ public class Table
     public Card DealerHoleCard { get; set; } = default;
     public bool HoleCardRevealed { get; set; } = false;
 
+    // Ultima!
+    public UltimaPhase UltimaPhase       { get; set; } = UltimaPhase.WaitingForPlayers;
+    public List<UltimaCard>                     UltimaDrawPile    { get; set; } = new();
+    public List<UltimaCard>                     UltimaDiscardPile { get; set; } = new();
+    public Dictionary<string, List<UltimaCard>> UltimaHands       { get; set; } = new();
+    public List<string>                         UltimaPlayerOrder { get; set; } = new();
+    public int                                  UltimaCurrentIndex{ get; set; } = 0;
+    public bool                                 UltimaClockwise   { get; set; } = true;
+    public UltimaColor                          UltimaActiveColor { get; set; } = UltimaColor.Wild;
+    public UltimaCard?                          UltimaTopCard     { get; set; }
+    public HashSet<string>                      UltimaCalled      { get; set; } = new();
+    public string                               UltimaWinner      { get; set; } = string.Empty;
+
     // Game statistics
     public int TotalGames { get; set; } = 0;
     public int TotalCardsDealt { get; set; } = 0;

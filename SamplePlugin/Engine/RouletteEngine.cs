@@ -8,7 +8,7 @@ namespace SamplePlugin.Engine;
 public class RouletteEngine
 {
     public Models.Table CurrentTable { get; set; }
-    public Models.ChatMode ChatMode { get; set; } = Models.ChatMode.Say;
+    public Models.ChatMode ChatMode { get; set; } = Models.ChatMode.Party;
 
     public Action<string>? OnChatMessage { get; set; }
     public Action<string, string>? OnPlayerTell { get; set; }

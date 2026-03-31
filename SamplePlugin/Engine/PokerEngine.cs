@@ -36,7 +36,7 @@ public class PokerEngine
     public const int MaxSeats = 8;
 
     public Table    CurrentTable { get; set; }
-    public ChatMode ChatMode     { get; set; } = ChatMode.Say;
+    public ChatMode ChatMode     { get; set; } = ChatMode.Party;
 
     public Action<string>?         OnChatMessage { get; set; }
     public Action<string, string>? OnPlayerTell  { get; set; }
@@ -753,11 +753,22 @@ public class PokerEngine
 
         if (elapsed >= CurrentTable.TurnTimeLimit)
         {
-            QueueMessage($"{DN(seatName)} ran out of time and is auto-folded.");
-            Log($"{seatName} auto-folded on timeout");
-            Seats[seat].Status   = PokerPlayerStatus.Folded;
-            Seats[seat].HasActed = true;
-            if (seatPlayer != null) seatPlayer.IsAfk = true;
+            int owed = CurrentTable.PokerStreetBet - Seats[seat].Bet;
+            if (owed <= 0)
+            {
+                // Nothing to call — auto-check costs nothing
+                QueueMessage($"{DN(seatName)} ran out of time and auto-checks.");
+                Log($"{seatName} auto-checked on timeout");
+                Seats[seat].HasActed = true;
+            }
+            else
+            {
+                QueueMessage($"{DN(seatName)} ran out of time and is auto-folded.");
+                Log($"{seatName} auto-folded on timeout");
+                Seats[seat].Status = PokerPlayerStatus.Folded;
+                Seats[seat].HasActed = true;
+                if (seatPlayer != null) seatPlayer.IsAfk = true;
+            }
             AdvanceTurn();
         }
     }

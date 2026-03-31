@@ -14,7 +14,8 @@ namespace SamplePlugin
         private Plugin plugin;
         private BlackjackEngine engine;
         public bool IsVisible { get; set; }
-        public string AdminName { get; set; } = string.Empty;
+        /// <summary>The dealer is always the local player — derived from the game client, never entered manually.</summary>
+        public string AdminName => Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
 
         // UI State for editing
         private Dictionary<string, string> editingName = new();
@@ -26,7 +27,6 @@ namespace SamplePlugin
         private string quickAddPlayerName = string.Empty;
 
         // Session snapshot (resume feature)
-        private Models.GameState _lastBJState  = Models.GameState.Lobby;
         private Models.SessionSnapshot? _sessionSnapshot;
         private bool _snapshotLoaded = false;
         private string SnapshotPath =>
@@ -94,18 +94,11 @@ namespace SamplePlugin
                 : serverName;
         }
 
+        /// <summary>Called from Plugin.OnAnyEngineUpdate after every dealer action.</summary>
+        public void AutoSaveSnapshot() => SaveSessionSnapshot();
+
         public void Draw()
         {
-            // Auto-save session snapshot when a blackjack round completes
-            var _bjState = engine.CurrentTable.GameState;
-            if (_lastBJState == Models.GameState.Playing &&
-                _bjState     == Models.GameState.Lobby   &&
-                engine.CurrentTable.GameType == Models.GameType.Blackjack)
-            {
-                SaveSessionSnapshot();
-            }
-            _lastBJState = _bjState;
-
             if (!IsVisible) return;
 
             bool isVisible = IsVisible;
@@ -163,7 +156,7 @@ namespace SamplePlugin
             ImGui.SameLine();
             ImGui.SetNextItemWidth(140);
             int gameType = (int)engine.CurrentTable.GameType;
-            string[] gameTypes = { "None", "Blackjack", "Roulette", "Craps", "Baccarat", "Chocobo Racing", "Texas Hold'Em" };
+            string[] gameTypes = { "None", "Blackjack", "Roulette", "Craps", "Baccarat", "Chocobo Racing", "Texas Hold'Em", "Ultima!" };
             if (ImGui.Combo("##gametype", ref gameType, gameTypes, gameTypes.Length))
             {
                 var newType = (Models.GameType)gameType;
@@ -184,6 +177,7 @@ namespace SamplePlugin
                             Models.GameType.Baccarat      => "Mini Baccarat",
                             Models.GameType.ChocoboRacing => "Chocobo Racing",
                             Models.GameType.TexasHoldEm   => "Texas Hold'Em",
+                            Models.GameType.Ultima        => "Ultima!",
                             _                             => "Blackjack"
                         };
                         engine.Announce($"Now playing: {gameName}!");
@@ -206,6 +200,7 @@ namespace SamplePlugin
                 plugin.BaccaratEngine.ChatMode = (Models.ChatMode)chatMode;
                 plugin.ChocoboEngine.ChatMode  = (Models.ChatMode)chatMode;
                 plugin.PokerEngine.ChatMode    = (Models.ChatMode)chatMode;
+                plugin.UltimaEngine.ChatMode   = (Models.ChatMode)chatMode;
             }
 
             // Echo player actions toggle
@@ -264,6 +259,8 @@ namespace SamplePlugin
                 DrawChocoboInterface();
             else if (engine.CurrentTable.GameType == Models.GameType.TexasHoldEm)
                 DrawPokerInterface();
+            else if (engine.CurrentTable.GameType == Models.GameType.Ultima)
+                DrawUltimaInterface();
             else
                 DrawDealerInterface();
         }
@@ -806,22 +803,42 @@ namespace SamplePlugin
 
         private void DrawCrapsTable()
         {
-            var table = engine.CurrentTable;
+            var table    = engine.CurrentTable;
             var drawList = ImGui.GetWindowDrawList();
-            var pos = ImGui.GetCursorScreenPos();
+            var pos      = ImGui.GetCursorScreenPos();
+            var mouse    = ImGui.GetIO().MousePos;
 
             const float W = 490f, H = 134f, pad = 4f;
 
-            // Aggregate bets for dot display
-            int totalDP    = table.CrapsBets.Values.Sum(b => b.DontPassBet);
-            int totalPass  = table.CrapsBets.Values.Sum(b => b.PassLineBet);
-            int totalField = table.CrapsBets.Values.Sum(b => b.FieldBet);
-            int totalBig6  = table.CrapsBets.Values.Sum(b => b.Big6Bet);
-            int totalBig8  = table.CrapsBets.Values.Sum(b => b.Big8Bet);
-            var placeMap   = new Dictionary<int, int>();
-            foreach (var b in table.CrapsBets.Values)
-                foreach (var kv in b.PlaceBets)
-                    placeMap[kv.Key] = placeMap.GetValueOrDefault(kv.Key) + kv.Value;
+            // ── Aggregate bets for dot display + tooltip data ─────────────────────────────
+            // betTooltip: section label → "Name1 (Xgil)\nName2 (Ygil)\n…"
+            var betTooltip = new Dictionary<string, string>();
+
+            void AddTip(string section, IEnumerable<(string name, int amt)> entries)
+            {
+                var lines = entries.Where(e => e.amt > 0).Select(e => $"{e.name}  {e.amt}\uE049").ToList();
+                if (lines.Count > 0) betTooltip[section] = string.Join("\n", lines);
+            }
+
+            AddTip("PASS",     table.CrapsBets.Select(kv => (kv.Key, kv.Value.PassLineBet)));
+            AddTip("DONTPASS", table.CrapsBets.Select(kv => (kv.Key, kv.Value.DontPassBet)));
+            AddTip("FIELD",    table.CrapsBets.Select(kv => (kv.Key, kv.Value.FieldBet)));
+            AddTip("BIG6",     table.CrapsBets.Select(kv => (kv.Key, kv.Value.Big6Bet)));
+            AddTip("BIG8",     table.CrapsBets.Select(kv => (kv.Key, kv.Value.Big8Bet)));
+
+            int[] pNums = { 4, 5, 6, 8, 9, 10 };
+            foreach (int pn in pNums)
+                AddTip($"PLACE{pn}", table.CrapsBets.Select(kv =>
+                    (kv.Key, kv.Value.PlaceBets.GetValueOrDefault(pn))));
+
+            string? ttTitle = null, ttBody = null;
+
+            bool HoverRect(float rx, float ry, float rw, float rh, string section)
+            {
+                if (mouse.X < rx || mouse.X >= rx + rw || mouse.Y < ry || mouse.Y >= ry + rh) return false;
+                if (betTooltip.TryGetValue(section, out var body)) { ttTitle = section; ttBody = body; }
+                return true;
+            }
 
             // Felt background
             drawList.AddRectFilled(pos, pos + new Vector2(W, H), 0xFF1A5C2A, 6f);
@@ -831,17 +848,18 @@ namespace SamplePlugin
             float x0 = pos.X + pad;
             float totalW = W - pad * 2;
 
-            // ── Don't Pass bar ───────────────────────────────────────────────────────────────
+            // ── Don't Pass bar ────────────────────────────────────────────────
             const float dpH = 16f;
             drawList.AddRectFilled(new Vector2(x0, y), new Vector2(x0 + totalW, y + dpH), 0xFF8B1A1A, 3f);
             drawList.AddRect(new Vector2(x0, y), new Vector2(x0 + totalW, y + dpH), 0xFFCC4444, 3f);
             var dpSz = ImGui.CalcTextSize("DON'T PASS");
             drawList.AddText(new Vector2(x0 + totalW * 0.5f - dpSz.X * 0.5f, y + dpH * 0.5f - dpSz.Y * 0.5f), 0xFFFFFFFF, "DON'T PASS");
-            if (totalDP > 0)
+            if (betTooltip.ContainsKey("DONTPASS"))
                 drawList.AddCircleFilled(new Vector2(x0 + totalW - 8f, y + dpH * 0.5f), 5f, 0xCCFFCC22u, 10);
+            HoverRect(x0, y, totalW, dpH, "DONTPASS");
             y += dpH + 2f;
 
-            // ── Place number boxes + Big 6/8 ─────────────────────────────────────────────────────
+            // ── Place number boxes + Big 6/8 ─────────────────────────────────
             int[] placeNums = { 4, 5, 6, 8, 9, 10 };
             const float bigSideW = 56f;
             float boxW = (totalW - bigSideW - 2f) / 6f;
@@ -853,7 +871,8 @@ namespace SamplePlugin
                 bool isPoint = table.CrapsPhase == Models.CrapsPhase.PointEstablished && table.CrapsPoint == n;
                 uint boxBg = isPoint ? 0xFFFFFFCC : 0xFF0F4020;
                 drawList.AddRectFilled(new Vector2(bx, y), new Vector2(bx + boxW, y + boxH), boxBg, 3f);
-                drawList.AddRect(new Vector2(bx, y), new Vector2(bx + boxW, y + boxH), isPoint ? 0xFFFFD700 : 0xFF448844, 3f);
+                drawList.AddRect(new Vector2(bx, y), new Vector2(bx + boxW, y + boxH),
+                    isPoint ? 0xFFFFD700 : 0xFF448844, 3f);
                 string numLabel = n == 6 ? "SIX" : n == 9 ? "NINE" : n.ToString();
                 var nSz = ImGui.CalcTextSize(numLabel);
                 drawList.AddText(new Vector2(bx + boxW * 0.5f - nSz.X * 0.5f, y + boxH * 0.5f - nSz.Y * 0.5f),
@@ -865,32 +884,34 @@ namespace SamplePlugin
                     var onSz = ImGui.CalcTextSize("ON");
                     drawList.AddText(new Vector2(bx + boxW - 8f - onSz.X * 0.5f, y + 8f - onSz.Y * 0.5f), 0xFF000000, "ON");
                 }
-                if (placeMap.GetValueOrDefault(n) > 0)
+                if (betTooltip.ContainsKey($"PLACE{n}"))
                     drawList.AddCircleFilled(new Vector2(bx + 8f, y + boxH - 8f), 5f, 0xCCFFCC22u, 10);
+                HoverRect(bx, y, boxW, boxH, $"PLACE{n}");
             }
-            // Big 6/8 box
             float bigX = x0 + 6f * (boxW + 1f) + 1f;
             drawList.AddRectFilled(new Vector2(bigX, y), new Vector2(bigX + bigSideW, y + boxH), 0xFF1A3A5C, 3f);
             drawList.AddRect(new Vector2(bigX, y), new Vector2(bigX + bigSideW, y + boxH), 0xFF4488AA, 3f);
-            var bigSz  = ImGui.CalcTextSize("BIG");
+            var bigSz   = ImGui.CalcTextSize("BIG");
             var big68Sz = ImGui.CalcTextSize("6 | 8");
             drawList.AddText(new Vector2(bigX + bigSideW * 0.5f - bigSz.X * 0.5f, y + 4f), 0xFFCCEEFF, "BIG");
             drawList.AddText(new Vector2(bigX + bigSideW * 0.5f - big68Sz.X * 0.5f, y + 4f + bigSz.Y + 1f), 0xFFFFFFFF, "6 | 8");
-            if (totalBig6 > 0)
-                drawList.AddCircleFilled(new Vector2(bigX + 8f,              y + boxH - 8f), 5f, 0xCCFFCC22u, 10);
-            if (totalBig8 > 0)
-                drawList.AddCircleFilled(new Vector2(bigX + bigSideW - 8f,  y + boxH - 8f), 5f, 0xCCFFCC22u, 10);
+            if (betTooltip.ContainsKey("BIG6"))
+                drawList.AddCircleFilled(new Vector2(bigX + 8f, y + boxH - 8f), 5f, 0xCCFFCC22u, 10);
+            if (betTooltip.ContainsKey("BIG8"))
+                drawList.AddCircleFilled(new Vector2(bigX + bigSideW - 8f, y + boxH - 8f), 5f, 0xCCFFCC22u, 10);
+            HoverRect(bigX, y, bigSideW, boxH, "BIG6");
             y += boxH + 2f;
 
-            // ── Pass Line + Field strip ──────────────────────────────────────────────────────
+            // ── Pass Line + Field strip ───────────────────────────────────────
             const float stripH = 22f;
             float passW = totalW * 0.68f;
             drawList.AddRectFilled(new Vector2(x0, y), new Vector2(x0 + passW, y + stripH), 0xFF0D5C1A, 3f);
             drawList.AddRect(new Vector2(x0, y), new Vector2(x0 + passW, y + stripH), 0xFF44AA44, 3f);
             var plSz = ImGui.CalcTextSize("PASS LINE");
             drawList.AddText(new Vector2(x0 + passW * 0.5f - plSz.X * 0.5f, y + stripH * 0.5f - plSz.Y * 0.5f), 0xFFFFFFFF, "PASS LINE");
-            if (totalPass > 0)
+            if (betTooltip.ContainsKey("PASS"))
                 drawList.AddCircleFilled(new Vector2(x0 + passW - 8f, y + stripH * 0.5f), 5f, 0xCCFFCC22u, 10);
+            HoverRect(x0, y, passW, stripH, "PASS");
 
             float fieldX = x0 + passW + 2f;
             float fieldW = totalW - passW - 2f;
@@ -898,11 +919,12 @@ namespace SamplePlugin
             drawList.AddRect(new Vector2(fieldX, y), new Vector2(fieldX + fieldW, y + stripH), 0xFFAAAA44, 3f);
             var fSz = ImGui.CalcTextSize("FIELD");
             drawList.AddText(new Vector2(fieldX + fieldW * 0.5f - fSz.X * 0.5f, y + stripH * 0.5f - fSz.Y * 0.5f), 0xFFFFFFEE, "FIELD");
-            if (totalField > 0)
+            if (betTooltip.ContainsKey("FIELD"))
                 drawList.AddCircleFilled(new Vector2(fieldX + fieldW - 8f, y + stripH * 0.5f), 5f, 0xCCFFCC22u, 10);
+            HoverRect(fieldX, y, fieldW, stripH, "FIELD");
             y += stripH + 2f;
 
-            // ── Shooter label + OFF puck ───────────────────────────────────────────────────────
+            // ── Shooter label + OFF puck ──────────────────────────────────────
             float infoY = y;
             float infoH = (pos.Y + H) - infoY - pad;
             string shooterLabel = string.IsNullOrEmpty(table.CrapsShooterName)
@@ -922,6 +944,14 @@ namespace SamplePlugin
             }
 
             ImGui.Dummy(new Vector2(W, H));
+
+            if (ttTitle != null)
+            {
+                ImGui.BeginTooltip();
+                ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), ttTitle);
+                if (ttBody != null) ImGui.TextUnformatted(ttBody);
+                ImGui.EndTooltip();
+            }
         }
 
         private void DrawDice(int d1, int d2, bool rolling)
@@ -1238,7 +1268,8 @@ namespace SamplePlugin
             ImGui.Separator();
 
             // ── Quick Bet setter (proxy) ─────────────────────────────────────────
-            if (engine.CurrentTable.Players.Count > 0 && engine.CurrentTable.GameState == Models.GameState.Lobby)
+            if (engine.CurrentTable.Players.Count > 0 && engine.CurrentTable.GameState == Models.GameState.Lobby
+                && engine.CurrentTable.GameType != Models.GameType.Ultima)
             {
                 ImGui.TextColored(new Vector4(1, 1, 0, 1), "SET BET (dealer proxy)");
                 var bjPlayerNames = engine.CurrentTable.Players.Values.Select(p => p.Name).ToArray();
@@ -1440,43 +1471,49 @@ namespace SamplePlugin
 
             var gameType    = engine.CurrentTable.GameType;
             bool isRoulette  = gameType == Models.GameType.Roulette;
+            bool showBankCol = gameType != Models.GameType.Ultima;
             bool showBetCol  = gameType != Models.GameType.None &&
                                gameType != Models.GameType.Craps &&
                                gameType != Models.GameType.ChocoboRacing &&
-                               gameType != Models.GameType.TexasHoldEm;
+                               gameType != Models.GameType.TexasHoldEm &&
+                               gameType != Models.GameType.Ultima;
             bool showPokerCards = gameType == Models.GameType.TexasHoldEm && _showPokerHoleCards;
             bool showCardsCol = gameType == Models.GameType.Blackjack || showPokerCards;
-            int c_afk     = showBetCol ? 4 : 3;
-            int c_stats   = c_afk + 1;
-            int c_cards   = showCardsCol ? c_stats + 1 : -1;
-            int c_actions = c_stats + (showCardsCol ? 2 : 1);
-            int colCount  = 6 + (showBetCol ? 1 : 0) + (showCardsCol ? 1 : 0);
+            int nextIdx   = 2; // after Name (0), Server (1)
+            int c_bank    = showBankCol  ? nextIdx++ : -1;
+            int c_bet     = showBetCol   ? nextIdx++ : -1;
+            int c_afk     = nextIdx++;
+            int c_stats   = nextIdx++;
+            int c_cards   = showCardsCol ? nextIdx++ : -1;
+            int c_actions = nextIdx;
+            int colCount  = nextIdx + 1;
 
-            if (ImGui.BeginTable("PlayersTable", colCount, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Resizable))
+            if (ImGui.BeginTable("PlayersTable", colCount, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Resizable | ImGuiTableFlags.SizingStretchProp))
             {
                 // Table Headers
-                ImGui.TableSetupColumn("Name",   ImGuiTableColumnFlags.WidthFixed, 120);
-                ImGui.TableSetupColumn("Server", ImGuiTableColumnFlags.WidthFixed, 80);
-                ImGui.TableSetupColumn("Bank",   ImGuiTableColumnFlags.WidthFixed, 80);
+                ImGui.TableSetupColumn("Name",   ImGuiTableColumnFlags.WidthStretch, 2.0f);
+                ImGui.TableSetupColumn("Server", ImGuiTableColumnFlags.WidthStretch, 1.3f);
+                if (showBankCol)
+                    ImGui.TableSetupColumn("Bank",   ImGuiTableColumnFlags.WidthStretch, 1.2f);
                 if (showBetCol)
-                    ImGui.TableSetupColumn("Bet", ImGuiTableColumnFlags.WidthFixed, 70);
-                ImGui.TableSetupColumn("AFK", ImGuiTableColumnFlags.WidthFixed, 50);
+                    ImGui.TableSetupColumn("Bet", ImGuiTableColumnFlags.WidthStretch, 1.0f);
+                ImGui.TableSetupColumn("AFK", ImGuiTableColumnFlags.WidthFixed, 40f);
                 string statsLabel = gameType switch
                 {
-                    Models.GameType.Roulette      => "📊 R.Net",
-                    Models.GameType.Craps         => "📊 C.Net",
-                    Models.GameType.Baccarat      => "📊 B.Net",
-                    Models.GameType.ChocoboRacing => "📊 CH.Net",
-                    Models.GameType.TexasHoldEm   => "📊 P.Net",
-                    _                             => "📊 Stats"
+                    Models.GameType.Roulette      => "❖ R.Net",
+                    Models.GameType.Craps         => "❖ C.Net",
+                    Models.GameType.Baccarat      => "❖ B.Net",
+                    Models.GameType.ChocoboRacing => "❖ CH.Net",
+                    Models.GameType.TexasHoldEm   => "❖ P.Net",
+                    _                             => "❖ Stats"
                 };
-                ImGui.TableSetupColumn(statsLabel, ImGuiTableColumnFlags.WidthFixed, 100);
+                ImGui.TableSetupColumn(statsLabel, ImGuiTableColumnFlags.WidthStretch, 1.3f);
                 if (showCardsCol)
                     ImGui.TableSetupColumn(
                         showPokerCards ? "Hole Cards" : "Cards",
                         ImGuiTableColumnFlags.WidthFixed,
                         showPokerCards ? 90 : 300);
-                ImGui.TableSetupColumn("Actions", ImGuiTableColumnFlags.WidthFixed, 160);
+                ImGui.TableSetupColumn("Actions", ImGuiTableColumnFlags.WidthStretch, 2.0f);
                 ImGui.TableHeadersRow();
 
                 var players = engine.CurrentTable.Players.Values.ToList();
@@ -1513,8 +1550,10 @@ namespace SamplePlugin
                         ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0.5f, 0, 0.3f)));
                     }
 
-                    // Dim row for kicked players
-                    if (player.IsKicked)
+                    // Snapshot kicked state NOW — before any Kick button can change it this frame.
+                    // An unbalanced Push/Pop corrupts the entire ImGui style stack for ALL windows.
+                    bool wasKickedAtRowStart = player.IsKicked;
+                    if (wasKickedAtRowStart)
                     {
                         ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0,
                             ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.12f, 0.12f, 1f)));
@@ -1573,35 +1612,33 @@ namespace SamplePlugin
                     }
 
                     // Bank Column - LIVE UPDATING
-                    ImGui.TableSetColumnIndex(2);
-                    ImGui.SetNextItemWidth(-1);
-                    string tempBank = editingBank[playerKey];
-
-                    // Color code based on bank amount
-                    Vector4 bankColor = player.Bank <= 0 ? new Vector4(1, 0.3f, 0.3f, 1f) : 
-                                       player.Bank < 1000 ? new Vector4(1, 1, 0.5f, 1f) : 
-                                       new Vector4(0.5f, 1f, 0.5f, 1f);
-                    ImGui.PushStyleColor(ImGuiCol.Text, bankColor);
-
-                    if (ImGui.InputText($"##bank{i}", ref tempBank, 20))
+                    if (showBankCol)
                     {
-                        if (int.TryParse(tempBank, out int newBank) && newBank >= 0)
-                        {
-                            player.Bank = newBank;
-                            editingBank[playerKey] = newBank.ToString();
-                        }
-                        else
-                        {
-                            // Reset to current valid value
-                            editingBank[playerKey] = player.Bank.ToString();
-                        }
-                    }
-                    ImGui.PopStyleColor();
+                        ImGui.TableSetColumnIndex(c_bank);
+                        ImGui.SetNextItemWidth(-1);
+                        string tempBank = editingBank[playerKey];
 
-                    // Bet Column - LIVE UPDATING (hidden for Craps)
+                        Vector4 bankColor = player.Bank <= 0 ? new Vector4(1, 0.3f, 0.3f, 1f) :
+                                           player.Bank < 1000 ? new Vector4(1, 1, 0.5f, 1f) :
+                                           new Vector4(0.5f, 1f, 0.5f, 1f);
+                        ImGui.PushStyleColor(ImGuiCol.Text, bankColor);
+                        if (ImGui.InputText($"##bank{i}", ref tempBank, 20))
+                        {
+                            if (int.TryParse(tempBank, out int newBank) && newBank >= 0)
+                            {
+                                player.Bank = newBank;
+                                editingBank[playerKey] = newBank.ToString();
+                            }
+                            else
+                                editingBank[playerKey] = player.Bank.ToString();
+                        }
+                        ImGui.PopStyleColor();
+                    }
+
+                    // Bet Column - LIVE UPDATING (hidden for Craps/Ultima/etc.)
                     if (showBetCol)
                     {
-                        ImGui.TableSetColumnIndex(3);
+                        ImGui.TableSetColumnIndex(c_bet);
                         ImGui.SetNextItemWidth(-1);
                         string tempBet = editingBet[playerKey];
 
@@ -1667,6 +1704,18 @@ namespace SamplePlugin
                             int net = player.PokerNetGains;
                             Vector4 nc = net > 0 ? new Vector4(0, 1, 0, 1f) : net < 0 ? new Vector4(1, 0.4f, 0.4f, 1f) : new Vector4(0.7f, 0.7f, 0.7f, 1f);
                             ImGui.TextColored(nc, net >= 0 ? $"+{net}\uE049" : $"{net}\uE049");
+                            break;
+                        }
+                        case Models.GameType.Ultima:
+                        {
+                            if (player.UltimaWins > 0 || player.UltimaLosses > 0)
+                            {
+                                ImGui.TextColored(new Vector4(0.3f, 1f, 0.5f, 1f), $"W:{player.UltimaWins}");
+                                ImGui.SameLine(0, 4);
+                                ImGui.TextColored(new Vector4(1f, 0.5f, 0.5f, 1f), $"L:{player.UltimaLosses}");
+                            }
+                            else
+                                ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "\u2014");
                             break;
                         }
                         default:
@@ -1792,6 +1841,7 @@ namespace SamplePlugin
                     {
                         ImGui.TextColored(new Vector4(0.6f, 0.3f, 0.3f, 1f), "[Kicked]");
                         ImGui.SameLine();
+                        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.55f, 0.55f, 1f));
                         if (ImGui.Button($"Remove##rm{i}", new Vector2(65, 0)))
                         {
                             engine.HardRemovePlayer(player.Name);
@@ -1800,6 +1850,7 @@ namespace SamplePlugin
                             editingBank.Remove(playerKey);
                             editingBet.Remove(playerKey);
                         }
+                        ImGui.PopStyleColor();
                     }
                     else
                     {
@@ -1819,7 +1870,7 @@ namespace SamplePlugin
                             engine.ToggleAFK(player.Name);
                     }
 
-                    if (player.IsKicked) ImGui.PopStyleColor();
+                    if (wasKickedAtRowStart) ImGui.PopStyleColor();
                 }  // end player loop
 
                 ImGui.EndTable();
@@ -1839,6 +1890,7 @@ namespace SamplePlugin
                     case Models.GameType.Baccarat:      plugin.BaccaratEngine.ForceStop(); break;
                     case Models.GameType.ChocoboRacing: plugin.ChocoboEngine.ForceStop();  break;
                     case Models.GameType.TexasHoldEm:   plugin.PokerEngine.ForceStop();    break;
+                    case Models.GameType.Ultima:        plugin.UltimaEngine.ForceEnd();    break;
                     default:                            engine.ForceStop();                break;
                 }
             }
@@ -1857,7 +1909,487 @@ namespace SamplePlugin
             DrawPlayersManagementTab();
         }
 
+        // ── ULTIMA! UI ───────────────────────────────────────────────────────────
+
+        private int ultimaResendIdx = 0;
+
+        private void DrawUltimaInterface()
+        {
+            var table  = engine.CurrentTable;
+            var ultima = plugin.UltimaEngine;
+
+            // ── Header ───────────────────────────────────────────────────────────
+            ImGui.TextColored(new Vector4(0.84f, 0.76f, 0.08f, 1f), "\u2756 ULTIMA!");
+            if (table.UltimaPhase == Models.UltimaPhase.Playing)
+            {
+                ImGui.SameLine();
+                string dir = table.UltimaClockwise ? "\u25ba Clockwise" : "\u25c4 Counter-clockwise";
+                ImGui.TextColored(new Vector4(0.5f, 1f, 1f, 1f), $"  {dir}");
+                if (table.UltimaPlayerOrder.Count > 0)
+                {
+                    ImGui.SameLine(320);
+                    string cur = table.UltimaPlayerOrder[table.UltimaCurrentIndex];
+                    ImGui.TextColored(new Vector4(0.3f, 1f, 0.5f, 1f), $"Turn: {table.GetDisplayName(cur)}");
+                }
+            }
+            else if (table.UltimaPhase == Models.UltimaPhase.Complete)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"  \u2756 {table.GetDisplayName(table.UltimaWinner)} wins!");
+            }
+            ImGui.Separator();
+
+            // ── Shared oval table (same visual as player view, fed from engine state) ──
+            DrawUltimaTableFromEngine();
+            ImGui.Separator();
+
+            // ── Privacy note when game is active ─────────────────────────────────
+            if (table.UltimaPhase == Models.UltimaPhase.Playing)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.78f, 0.2f, 1f));
+                ImGui.TextWrapped("\u26a0 Other players' hands are private. Your own hand is below.");
+                ImGui.PopStyleColor();
+                ImGui.Spacing();
+
+                // ── Dealer's own hand (the admin is a player too) ─────────────────
+                if (!string.IsNullOrEmpty(AdminName) &&
+                    table.UltimaHands.TryGetValue(AdminName, out var dealerHand) && dealerHand.Count > 0)
+                {
+                    bool myTurn = table.UltimaCurrentIndex < table.UltimaPlayerOrder.Count &&
+                                  table.UltimaPlayerOrder[table.UltimaCurrentIndex]
+                                      .Equals(AdminName, StringComparison.OrdinalIgnoreCase);
+
+                    ImGui.TextColored(new Vector4(0.5f, 1f, 1f, 1f), "YOUR HAND");
+                    ImGui.SameLine(120);
+                    if (myTurn)
+                        ImGui.TextColored(new Vector4(0.3f, 1f, 0.5f, 1f), "\u25ba YOUR TURN \u2014 click to play");
+                    ImGui.Spacing();
+
+                    DrawUltimaHandDealer(dealerHand, ultima, AdminName, myTurn);
+                    ImGui.Spacing();
+                    ImGui.Separator();
+                }
+            }
+
+            // ── Start / admin controls ────────────────────────────────────────────
+            if (table.UltimaPhase != Models.UltimaPhase.Playing)
+            {
+                ImGui.Spacing();
+                if (ImGui.Button("\u2756 Start Ultima!", new Vector2(160, 32)))
+                    ultima.StartGame(AdminName, out _);
+                ImGui.SameLine();
+                ImGui.TextColored(new Vector4(0.55f, 0.55f, 0.55f, 1f), "Or any player: >DEAL");
+            }
+            else
+            {
+                // Resend hand — only meaningful while a game is running
+                var pNames = table.UltimaPlayerOrder.ToArray();
+                if (pNames.Length > 0)
+                {
+                    if (ultimaResendIdx >= pNames.Length) ultimaResendIdx = 0;
+                    ImGui.SetNextItemWidth(150);
+                    ImGui.Combo("##uresend", ref ultimaResendIdx, pNames, pNames.Length);
+                    ImGui.SameLine();
+                    if (ImGui.Button("Resend Hand", new Vector2(100, 24)))
+                        ultima.ResendHand(pNames[ultimaResendIdx]);
+                }
+            }
+
+            // ── Force End — always visible at bottom ──────────────────────────────
+            ImGui.Spacing();
+            ImGui.Separator();
+            bool notPlaying = table.UltimaPhase != Models.UltimaPhase.Playing;
+            ImGui.BeginDisabled(notPlaying);
+            ImGui.PushStyleColor(ImGuiCol.Button,        new Vector4(0.55f, 0.10f, 0.10f, notPlaying ? 0.4f : 1f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.75f, 0.20f, 0.20f, 1f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive,  new Vector4(1.00f, 0.30f, 0.30f, 1f));
+            if (ImGui.Button("\u26d4 Force End Ultima", new Vector2(160, 28)))
+                ultima.ForceEnd();
+            ImGui.PopStyleColor(3);
+            ImGui.EndDisabled();
+
+            // ── Rules / Help quick-reference ──────────────────────────────────────
+            ImGui.SameLine(0, 12);
+            if (ImGui.Button("Rules", new Vector2(56, 28)))
+            {
+                string pfx = engine.ChatMode == Models.ChatMode.Party ? "/party " : "/say ";
+                plugin.SendGameMessage(pfx + ">RULES");
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Help", new Vector2(48, 28)))
+            {
+                string pfx = engine.ChatMode == Models.ChatMode.Party ? "/party " : "/say ";
+                plugin.SendGameMessage(pfx + ">HELP");
+            }
+            ImGui.Spacing();
+
+            DrawPlayersManagementTab();
+        }
+
+        private void DrawUltimaCardInline(Models.UltimaCard card, float w, float h)
+        {
+            var dl  = ImGui.GetWindowDrawList();
+            var pos = ImGui.GetCursorScreenPos();
+            var bg  = ImGui.ColorConvertFloat4ToU32(Models.UltimaCard.ColorVec(card.Color));
+            var txt = ImGui.ColorConvertFloat4ToU32(Models.UltimaCard.TextColor(card.Color));
+            dl.AddRectFilled(pos, pos + new Vector2(w, h), bg, 6f);
+            dl.AddRect(pos, pos + new Vector2(w, h),
+                ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.25f)), 6f, ImDrawFlags.None, 1.5f);
+            var sym = card.Symbol;
+            var ssz = ImGui.CalcTextSize(sym);
+            dl.AddText(pos + new Vector2(w * 0.5f - ssz.X * 0.5f, h * 0.5f - ssz.Y * 0.5f), txt, sym);
+            ImGui.Dummy(new Vector2(w + 4, h + 4));
+        }
+
+        private void DrawUltimaHandRow(System.Collections.Generic.List<Models.UltimaCard> hand)
+        {
+            var dl  = ImGui.GetWindowDrawList();
+            var pos = ImGui.GetCursorScreenPos();
+            float cw = 30f, ch = 44f, gap = 2f;
+            for (int i = 0; i < hand.Count; i++)
+            {
+                var card = hand[i];
+                float x = pos.X + i * (cw + gap);
+                var   bg = ImGui.ColorConvertFloat4ToU32(Models.UltimaCard.ColorVec(card.Color));
+                var   fg = ImGui.ColorConvertFloat4ToU32(Models.UltimaCard.TextColor(card.Color));
+                dl.AddRectFilled(new Vector2(x, pos.Y), new Vector2(x + cw, pos.Y + ch), bg, 3f);
+                var sym = card.Symbol;
+                var ssz = ImGui.CalcTextSize(sym);
+                if (ssz.X < cw)
+                    dl.AddText(new Vector2(x + cw * 0.5f - ssz.X * 0.5f, pos.Y + ch * 0.5f - ssz.Y * 0.5f), fg, sym);
+            }
+            ImGui.Dummy(new Vector2(hand.Count * (cw + gap) + 4, ch + 4));
+        }
+
         // ── POKER HOLE CARDS CELL HELPER ──────────────────────────────────────────
+
+        private int _dealerUltimaSelIdx  = -1;
+        private int _dealerUltimaColPick = 0;
+
+        /// <summary>
+        /// Dealer's interactive Ultima hand — same InvisibleButton-per-card approach as the
+        /// player view but calls <see cref="UltimaEngine.PlayCard"/> directly (no chat round-trip).
+        /// </summary>
+        private void DrawUltimaHandDealer(
+            System.Collections.Generic.List<Models.UltimaCard> hand,
+            Engine.UltimaEngine ultima,
+            string adminName,
+            bool myTurn)
+        {
+            var dl = ImGui.GetWindowDrawList();
+
+            float cw = 58f, ch = 82f, gap = 6f, lift = 14f;
+            var basePos  = ImGui.GetCursorScreenPos();
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + lift);
+            var startPos = ImGui.GetCursorScreenPos();
+
+            for (int i = 0; i < hand.Count; i++)
+            {
+                var  card = hand[i];
+                bool sel  = _dealerUltimaSelIdx == i;
+
+                ImGui.SetCursorScreenPos(new Vector2(startPos.X + i*(cw+gap), startPos.Y - lift));
+                bool clicked = ImGui.InvisibleButton($"##dcard_{i}", new Vector2(cw, ch + lift));
+                bool hover   = ImGui.IsItemHovered();
+
+                float cardY = (sel || hover) ? startPos.Y - lift : startPos.Y;
+                var   cpos  = new Vector2(startPos.X + i*(cw+gap), cardY);
+
+                if (sel)
+                    dl.AddRectFilled(cpos - new Vector2(3,3), cpos + new Vector2(cw+3,ch+3),
+                        ImGui.ColorConvertFloat4ToU32(new Vector4(1f,1f,0.3f,0.55f)), 9f);
+
+                DrawUltimaCardInline_AtPos(dl, cpos, cw, ch, card);
+
+                if (hover) ImGui.SetTooltip(card.DisplayName);
+
+                if (clicked)
+                {
+                    if (card.IsWild)
+                        _dealerUltimaSelIdx = (_dealerUltimaSelIdx == i) ? -1 : i;
+                    else if (myTurn)
+                    {
+                        ultima.PlayCard(adminName, card.Code, null, out _);
+                        _dealerUltimaSelIdx = -1;
+                        SyncDealerHandToPlayerView(adminName);
+                    }
+                    else
+                        _dealerUltimaSelIdx = (_dealerUltimaSelIdx == i) ? -1 : i;
+                }
+            }
+
+            ImGui.SetCursorScreenPos(new Vector2(basePos.X, startPos.Y + ch + 8f));
+            ImGui.Dummy(new Vector2(hand.Count > 0 ? hand.Count*(cw+gap) : 1f, 1f));
+
+            // Wild color picker
+            Models.UltimaCard? selCard = _dealerUltimaSelIdx >= 0 && _dealerUltimaSelIdx < hand.Count
+                ? hand[_dealerUltimaSelIdx] : null;
+            if (selCard != null && selCard.IsWild)
+            {
+                ImGui.TextColored(new Vector4(0.7f,0.7f,0.7f,1f), $"[{selCard.Code}] Choose color:");
+                ImGui.SameLine();
+                string[]  cnames = { "Water", "Fire", "Grass", "Light" };
+                Vector4[] cvecs  = {
+                    new(0.14f,0.38f,0.82f,1f), new(0.82f,0.14f,0.14f,1f),
+                    new(0.12f,0.64f,0.22f,1f), new(0.84f,0.76f,0.08f,1f),
+                };
+                for (int ci = 0; ci < 4; ci++)
+                {
+                    bool pick = _dealerUltimaColPick == ci;
+                    ImGui.PushStyleColor(ImGuiCol.Button, cvecs[ci] with { W = pick ? 1f : 0.45f });
+                    if (ImGui.Button(cnames[ci] + "##dcolbtn" + ci, new Vector2(66, 30)))
+                    {
+                        _dealerUltimaColPick = ci;
+                        if (myTurn)
+                        {
+                            ultima.PlayCard(adminName, selCard.Code, cnames[ci].ToUpperInvariant(), out _);
+                            _dealerUltimaSelIdx = -1;
+                            SyncDealerHandToPlayerView(adminName);
+                        }
+                    }
+                    ImGui.PopStyleColor();
+                    if (ci < 3) ImGui.SameLine();
+                }
+                ImGui.Spacing();
+            }
+
+            // Utility row
+            ImGui.Spacing();
+            ImGui.BeginDisabled(!myTurn);
+            if (ImGui.Button("DRAW##dealerDraw", new Vector2(70, 28)))
+            {
+                ultima.DrawCard(adminName, out _);
+                SyncDealerHandToPlayerView(adminName);
+            }
+            ImGui.EndDisabled();
+
+            ImGui.SameLine();
+            bool ultima1 = hand.Count == 1;
+            if (ultima1) ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.8f,0.15f,0.15f,1f));
+            if (ImGui.Button("ULTIMA!##dealerUlt", new Vector2(75, 28)))
+                ultima.CallUltima(adminName);
+            if (ultima1) ImGui.PopStyleColor();
+        }
+
+        /// <summary>
+        /// After the dealer plays or draws a card from the dealer panel, the engine state
+        /// updates immediately but the tell-to-self never arrives as TellIncoming.
+        /// This pushes ALL relevant Ultima state into the player-view parser so the Player
+        /// tab stays perfectly in sync without any chat round-trip.
+        /// </summary>
+        private void SyncDealerHandToPlayerView(string adminName)
+        {
+            var t = engine.CurrentTable;
+            var s = plugin.ChatParser.State;
+            // Atomic list replacements to avoid the render thread seeing an empty
+            // list between Clear() and AddRange() (race condition → "No game in progress").
+            if (t.UltimaHands.TryGetValue(adminName, out var syncHand))
+                s.UltimaHand = new List<Models.UltimaCard>(syncHand);
+            s.UltimaTopCard     = t.UltimaTopCard;
+            s.UltimaActiveColor = t.UltimaActiveColor;
+            s.UltimaClockwise   = t.UltimaClockwise;
+            s.UltimaWinner      = t.UltimaWinner;
+            if (t.UltimaPhase == Models.UltimaPhase.Playing &&
+                t.UltimaCurrentIndex < t.UltimaPlayerOrder.Count)
+                s.UltimaCurrentPlayer = t.GetDisplayName(t.UltimaPlayerOrder[t.UltimaCurrentIndex]);
+            s.UltimaPlayerOrder = t.UltimaPlayerOrder.Select(n => t.GetDisplayName(n)).ToList();
+            var newCounts = new Dictionary<string, int>();
+            foreach (var kvp in t.UltimaHands)
+                newCounts[t.GetDisplayName(kvp.Key)] = kvp.Value.Count;
+            s.UltimaCardCounts = newCounts;
+        }
+
+        private static void DrawUltimaCardInline_AtPos(
+            ImDrawListPtr dl, Vector2 pos, float w, float h, Models.UltimaCard card)
+        {
+            uint bg  = ImGui.ColorConvertFloat4ToU32(Models.UltimaCard.ColorVec(card.Color));
+            uint fg  = ImGui.ColorConvertFloat4ToU32(Models.UltimaCard.TextColor(card.Color));
+            uint rim = ImGui.ColorConvertFloat4ToU32(new Vector4(1f,1f,1f,0.18f));
+            dl.AddRectFilled(pos, pos+new Vector2(w,h), bg, 6f);
+            dl.AddRect(pos, pos+new Vector2(w,h), rim, 6f, ImDrawFlags.None, 1.5f);
+            var sym = card.Symbol;
+            var ssz = ImGui.CalcTextSize(sym);
+            dl.AddText(pos + new Vector2(w*0.5f-ssz.X*0.5f, h*0.5f-ssz.Y*0.5f), fg, sym);
+            string code = card.Code;
+            var   csz   = ImGui.CalcTextSize(code);
+            if (csz.X < w-2) dl.AddText(pos + new Vector2(3, 2), fg, code);
+        }
+
+        /// <summary>
+        /// Draws the Ultima! oval table using live engine state — mirrors the
+        /// layout in PlayerViewWindow.DrawUltimaTable but reads from the Table directly.
+        /// </summary>
+        private void DrawUltimaTableFromEngine()
+        {
+            var  table  = engine.CurrentTable;
+            var  dl     = ImGui.GetWindowDrawList();
+            ImGui.Dummy(new Vector2(0, 6f));
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 8f);
+            var  origin = ImGui.GetCursorScreenPos();
+            float W = 560f, H = 220f;
+            var  center = origin + new Vector2(W * 0.5f, H * 0.5f);
+            float rx = 190f, ry = 68f;
+
+            // Felt oval
+            uint felt   = ImGui.ColorConvertFloat4ToU32(new Vector4(0.05f, 0.28f, 0.35f, 1f));
+            uint border = ImGui.ColorConvertFloat4ToU32(new Vector4(0.55f, 0.38f, 0.08f, 1f));
+            for (int i = 0; i < 48; i++)
+            {
+                float a = (float)(i * 2 * Math.PI / 48);
+                dl.PathLineTo(center + new Vector2(MathF.Cos(a) * rx, MathF.Sin(a) * ry));
+            }
+            dl.PathFillConvex(felt);
+            for (int i = 0; i < 48; i++)
+            {
+                float a = (float)(i * 2 * Math.PI / 48);
+                dl.PathLineTo(center + new Vector2(MathF.Cos(a) * rx, MathF.Sin(a) * ry));
+            }
+            dl.PathStroke(border, ImDrawFlags.Closed, 3f);
+
+            // Direction arrow — arrowhead at the leading edge shows direction of play
+            {
+                bool  cw     = table.UltimaClockwise;
+                float ar     = 56f;
+                uint  arcCol = ImGui.ColorConvertFloat4ToU32(new Vector4(0.8f, 0.8f, 0.3f, 0.65f));
+                float start  = cw ? -(float)(Math.PI * 0.7) : -(float)(Math.PI * 0.3);
+                float span   = cw ?  (float)(Math.PI * 1.4) : -(float)(Math.PI * 1.4);
+                int   segs   = 22;
+                for (int i = 0; i < segs; i++)
+                {
+                    float a1 = start + span * i / segs;
+                    float a2 = start + span * (i + 1) / segs;
+                    dl.AddLine(center + new Vector2(MathF.Cos(a1)*ar, MathF.Sin(a1)*ar),
+                               center + new Vector2(MathF.Cos(a2)*ar, MathF.Sin(a2)*ar),
+                               arcCol, 2.8f);
+                }
+                float ae   = start + span;
+                float tang = ae + (cw ? (float)(Math.PI*0.5f) : -(float)(Math.PI*0.5f));
+                var   tip  = center + new Vector2(MathF.Cos(ae)*ar, MathF.Sin(ae)*ar);
+                dl.AddTriangleFilled(
+                    tip + new Vector2(MathF.Cos(tang)*13, MathF.Sin(tang)*13),
+                    tip + new Vector2(MathF.Cos(tang+MathF.PI-0.45f)*10, MathF.Sin(tang+MathF.PI-0.45f)*10),
+                    tip + new Vector2(MathF.Cos(tang+MathF.PI+0.45f)*10, MathF.Sin(tang+MathF.PI+0.45f)*10),
+                    arcCol);
+            }
+
+            // Top card
+            if (table.UltimaTopCard != null)
+            {
+                float cw2 = 54f, ch2 = 76f;
+                var   cp  = center - new Vector2(cw2*0.5f, ch2*0.5f);
+                var   bg  = ImGui.ColorConvertFloat4ToU32(Models.UltimaCard.ColorVec(table.UltimaTopCard.Color));
+                var   fg  = ImGui.ColorConvertFloat4ToU32(Models.UltimaCard.TextColor(table.UltimaTopCard.Color));
+                uint  rim = ImGui.ColorConvertFloat4ToU32(new Vector4(1f,1f,1f,0.18f));
+                dl.AddRectFilled(cp, cp+new Vector2(cw2,ch2), bg, 6f);
+                dl.AddRect(cp, cp+new Vector2(cw2,ch2), rim, 6f, ImDrawFlags.None, 1.5f);
+                string sym = table.UltimaTopCard.Symbol;
+                var    ssz = ImGui.CalcTextSize(sym);
+                dl.AddText(cp+new Vector2(cw2*0.5f-ssz.X*0.5f, ch2*0.5f-ssz.Y*0.5f), fg, sym);
+                string code = table.UltimaTopCard.Code;
+                var    csz  = ImGui.CalcTextSize(code);
+                if (csz.X < cw2-2) dl.AddText(cp+new Vector2(2,1), fg, code);
+
+                // Active-colour swatch for wilds
+                if (table.UltimaTopCard.IsWild)
+                {
+                    var sp = cp + new Vector2(cw2+5, ch2*0.5f-10);
+                    uint sc = ImGui.ColorConvertFloat4ToU32(Models.UltimaCard.ColorVec(table.UltimaActiveColor));
+                    dl.AddRectFilled(sp, sp+new Vector2(20,20), sc, 4f);
+                    dl.AddRect(sp, sp+new Vector2(20,20),
+                        ImGui.ColorConvertFloat4ToU32(new Vector4(1,1,1,0.4f)), 4f);
+                    string cl = Models.UltimaCard.ColorDisplayName(table.UltimaActiveColor);
+                    var    clsz = ImGui.CalcTextSize(cl);
+                    dl.AddText(sp+new Vector2(22, 10-clsz.Y*0.5f),
+                        ImGui.ColorConvertFloat4ToU32(new Vector4(0.9f,0.9f,0.9f,0.85f)), cl);
+                }
+            }
+            else
+            {
+                uint gray = ImGui.ColorConvertFloat4ToU32(new Vector4(0.4f,0.6f,0.6f,0.5f));
+                string lbl = table.UltimaPhase == Models.UltimaPhase.Playing
+                    ? "Waiting for cards…" : "No game in progress";
+                var lsz = ImGui.CalcTextSize(lbl);
+                dl.AddText(center - lsz*0.5f, gray, lbl);
+            }
+
+            // Player tokens at fixed seat positions (same angles as PlayerViewWindow)
+            var players  = table.UltimaPlayerOrder;
+            int nPlayers = players.Count;
+            float[] allAngles = {
+                (float)( Math.PI*0.5),
+                (float)(-Math.PI*0.5),
+                (float)(-Math.PI*0.83),
+                (float)(-Math.PI*0.17),
+                (float)( Math.PI),
+                0f,
+                (float)( Math.PI*0.72),
+                (float)( Math.PI*0.28),
+            };
+
+            for (int i = 0; i < nPlayers; i++)
+            {
+                float angle = allAngles[Math.Min(i, allAngles.Length-1)];
+                float px = center.X + MathF.Cos(angle) * (rx + 44);
+                float py = center.Y + MathF.Sin(angle) * (ry  + 34);
+                var   pos = new Vector2(px, py);
+                string pname = players[i];
+                bool   isCur = pname.Equals(
+                    nPlayers > 0 ? players[table.UltimaCurrentIndex] : string.Empty,
+                    StringComparison.OrdinalIgnoreCase);
+                int    cnt   = table.UltimaHands.TryGetValue(pname, out var ph) ? ph.Count : 0;
+                string disp  = pname.Contains(' ') ? pname.Split(' ')[0] : pname;
+
+                uint bgC  = ImGui.ColorConvertFloat4ToU32(new Vector4(0.08f,0.12f,0.18f,0.75f));
+                uint rimC = isCur
+                    ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.3f,1f,0.5f,1f))
+                    : ImGui.ColorConvertFloat4ToU32(new Vector4(0.45f,0.45f,0.45f,0.7f));
+                var  nsz  = ImGui.CalcTextSize(disp);
+                float bw  = Math.Max(nsz.X+12, 54), bh = 20;
+                var   bl  = pos - new Vector2(bw*0.5f, bh*0.5f);
+                dl.AddRectFilled(bl, bl+new Vector2(bw,bh), bgC, 4f);
+                dl.AddRect(bl, bl+new Vector2(bw,bh), rimC, 4f, ImDrawFlags.None, isCur?1.8f:1f);
+                dl.AddText(pos-new Vector2(nsz.X*0.5f,nsz.Y*0.5f),
+                    ImGui.ColorConvertFloat4ToU32(new Vector4(0.9f,0.9f,0.9f,1f)), disp);
+
+                if (cnt == 1)
+                {
+                    uint uc = ImGui.ColorConvertFloat4ToU32(new Vector4(1f,0.84f,0f,1f));
+                    string ut = "ULTIMA!";
+                    var   usz = ImGui.CalcTextSize(ut);
+                    dl.AddText(pos+new Vector2(-usz.X*0.5f, bh*0.5f+2), uc, ut);
+                }
+                else if (cnt > 0)
+                {
+                    float pip = 6f, gap2 = 3f;
+                    int   cols = Math.Min(cnt, 10);
+                    float rowW = cols*(pip+gap2)-gap2;
+                    for (int c = 0; c < cols; c++)
+                    {
+                        var pp = pos+new Vector2(-rowW*0.5f+c*(pip+gap2), bh*0.5f+3);
+                        dl.AddRectFilled(pp, pp+new Vector2(pip,pip),
+                            ImGui.ColorConvertFloat4ToU32(new Vector4(0.65f,0.65f,0.65f,0.8f)), 2f);
+                    }
+                    if (cnt > 10)
+                    {
+                        string more = $"+{cnt-10}";
+                        var    msz  = ImGui.CalcTextSize(more);
+                        dl.AddText(pos+new Vector2(10*(pip+gap2)-rowW*0.5f+2, bh*0.5f+2),
+                            ImGui.ColorConvertFloat4ToU32(new Vector4(0.7f,0.7f,0.7f,0.9f)), more);
+                    }
+                }
+            }
+
+            ImGui.Dummy(new Vector2(W, H + 4f));
+
+            // Winner banner below the oval
+            if (!string.IsNullOrEmpty(table.UltimaWinner))
+            {
+                string winMsg = $"\u2756 {table.GetDisplayName(table.UltimaWinner)} wins Ultima! \u2756";
+                var    wsz   = ImGui.CalcTextSize(winMsg);
+                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (W - wsz.X) * 0.5f);
+                ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), winMsg);
+            }
+        }
 
         private void DrawPokerHoleCardsCell(Models.Player player)
         {
@@ -2319,6 +2851,37 @@ namespace SamplePlugin
 
                 ImGui.Separator();
 
+                // ── Dealer's own hole cards (so they can play as a player too) ──────────
+                {
+                    string adminName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+                    int adminSeat = -1;
+                    for (int asi = 0; asi < PokerEngine.MaxSeats; asi++)
+                    {
+                        if (poker.Seats[asi].IsOccupied &&
+                            poker.Seats[asi].PlayerName.Equals(adminName, StringComparison.OrdinalIgnoreCase))
+                        { adminSeat = asi; break; }
+                    }
+                    if (adminSeat >= 0 && inHand && poker.Seats[adminSeat].IsActive &&
+                        !string.IsNullOrEmpty(poker.Seats[adminSeat].HoleCard1.Suit))
+                    {
+                        var seat = poker.Seats[adminSeat];
+                        ImGui.TextColored(new Vector4(0.5f, 1f, 1f, 1f), "YOUR HAND:");
+                        ImGui.SameLine();
+                        var cards = new[] { seat.HoleCard1, seat.HoleCard2 };
+                        for (int hci = 0; hci < cards.Length; hci++)
+                        {
+                            var c = cards[hci];
+                            if (string.IsNullOrEmpty(c.Suit)) continue;
+                            bool red = c.Suit == "H" || c.Suit == "D";
+                            ImGui.TextColored(red ? new Vector4(0.9f, 0.15f, 0.15f, 1f)
+                                                  : new Vector4(0.95f, 0.95f, 0.95f, 1f),
+                                c.GetCardDisplay());
+                            if (hci < cards.Length - 1) ImGui.SameLine();
+                        }
+                        ImGui.Separator();
+                    }
+                }
+
                 // ── Turn timer bar ───────────────────────────────────────────────────────
                 if (inHand && table.PokerCurrentSeat >= 0 && poker.Seats[table.PokerCurrentSeat].IsActive)
                 {
@@ -2407,15 +2970,6 @@ namespace SamplePlugin
             private void DrawAdminTab()
         {
             ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), "ADMIN CONTROLS");
-
-            // Admin Name Setting
-            ImGui.Text("Admin Name:");
-            string adminNameTemp = AdminName;
-            ImGui.SetNextItemWidth(200);
-            if (ImGui.InputText("##adminName", ref adminNameTemp, 100))
-                AdminName = adminNameTemp;
-            ImGui.SameLine();
-            ImGui.Text($"Current: {(string.IsNullOrEmpty(AdminName) ? "None" : AdminName)}");
 
             ImGui.Separator();
 

@@ -23,7 +23,7 @@ public class ChocoboRacer
 public class ChocoboEngine
 {
     public Table    CurrentTable { get; set; }
-    public ChatMode ChatMode     { get; set; } = ChatMode.Say;
+    public ChatMode ChatMode     { get; set; } = ChatMode.Party;
 
     public Action<string>?         OnChatMessage { get; set; }
     public Action<string, string>? OnPlayerTell  { get; set; }

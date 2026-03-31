@@ -26,6 +26,13 @@ public class PVPokerShowdown
     public string HandDesc { get; set; } = string.Empty;
 }
 
+public class PVChocoboRacer
+{
+    public int    Number { get; set; }
+    public string Name   { get; set; } = string.Empty;
+    public string Odds   { get; set; } = string.Empty;
+}
+
 public class PlayerViewState
 {
     // ── Configuration ────────────────────────────────────────────────────────
@@ -71,7 +78,22 @@ public class PlayerViewState
     public string PVBetAmount      { get; set; } = "100";
     public string PVRouletteTarget { get; set; } = "RED";
     public int    PVCrapsPlaceNum  { get; set; } = 0;   // index into {4,5,6,8,9,10}
+    public int    PVCrapsBetType   { get; set; } = 0;   // index into bet type dropdown
     public int    PVPokerRaiseAmt  { get; set; } = 100;
+
+    // ── Baccarat player view ──────────────────────────────────────────────────
+    public int    PVBaccaratBetType { get; set; } = 0;  // 0=Player, 1=Banker, 2=Tie
+    public string BacPlayerCards   { get; set; } = string.Empty;
+    public string BacBankerCards   { get; set; } = string.Empty;
+    public int    BacPlayerScore   { get; set; }
+    public int    BacBankerScore   { get; set; }
+    public string BacResult        { get; set; } = string.Empty;
+    public bool   BacActive        { get; set; }
+
+    // ── Chocobo player view ───────────────────────────────────────────────────
+    public List<PVChocoboRacer>  ChocoboRacers     { get; set; } = new();
+    public int                   PVChocoboRacerPick { get; set; } = 0;
+    public bool                  ChocoboBettingOpen { get; set; }
 
     // ── Auto-switch ───────────────────────────────────────────────────────────
     /// <summary>Set when DetectedGame is first populated; PluginUI polls and resets it.</summary>
@@ -79,12 +101,24 @@ public class PlayerViewState
 
     // ── Craps bet tracking ────────────────────────────────────────────────────
     /// <summary>
-    /// Active bet sections parsed from dealer chat.
-    /// Keys: PASS, DONTPASS, FIELD, BIG6, BIG8, PLACE4, PLACE5, PLACE6, PLACE8, PLACE9, PLACE10
-    /// Values: number of distinct players with that bet (approximate).
+    /// Keys: PASS, DONTPASS, FIELD, BIG6, BIG8, PLACE4..PLACE10.
+    /// Values: names of players observed placing that bet.
     /// </summary>
-    public Dictionary<string, int> CrapsBetTotals { get; set; } =
+    public Dictionary<string, List<string>> CrapsBets { get; set; } =
         new(StringComparer.OrdinalIgnoreCase);
+
+    // __ Ultima! _______________________________________________________________
+    public List<UltimaCard>        UltimaHand          { get; set; } = new();
+    public UltimaCard?             UltimaTopCard        { get; set; }
+    public UltimaColor             UltimaActiveColor    { get; set; } = UltimaColor.Wild;
+    public string                  UltimaCurrentPlayer  { get; set; } = string.Empty;
+    public string                  UltimaWinner         { get; set; } = string.Empty;
+    public bool                    UltimaClockwise      { get; set; } = true;
+    public bool                    UltimaSortByColor    { get; set; } = true;
+    public int?                    UltimaSelectedIdx    { get; set; }
+    public int                     UltimaColorPickIdx   { get; set; } = 0;
+    public Dictionary<string, int> UltimaCardCounts     { get; set; } = new();
+    public List<string>            UltimaPlayerOrder    { get; set; } = new();
 
     public void AddFeed(string msg)
     {

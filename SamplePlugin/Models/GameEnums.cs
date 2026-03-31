@@ -33,7 +33,8 @@ public enum GameType
     Craps,
     Baccarat,
     ChocoboRacing,
-    TexasHoldEm
+    TexasHoldEm,
+    Ultima
 }
 
 public enum RouletteSpinState
@@ -81,4 +82,11 @@ public enum PokerPlayerStatus
     Active,
     Folded,
     AllIn
+}
+
+public enum UltimaPhase
+{
+    WaitingForPlayers,
+    Playing,
+    Complete
 }

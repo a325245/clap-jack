@@ -76,7 +76,7 @@ public class BlackjackEngine
 
         // Validate all players have funds
         var validPlayers = CurrentTable.Players.Values
-            .Where(p => !p.IsAfk && p.PersistentBet >= CurrentTable.MinBet && p.Bank >= p.PersistentBet)
+            .Where(p => !p.IsAfk && !p.IsKicked && p.PersistentBet >= CurrentTable.MinBet && p.Bank >= p.PersistentBet)
             .ToList();
 
         if (validPlayers.Count == 0)
@@ -740,7 +740,6 @@ public class BlackjackEngine
         if (!CurrentTable.Players.TryGetValue(nameUpper, out var player)) return;
 
         player.IsKicked = true;
-        player.IsAfk    = true;
         LogAction($"Player kicked: {name}");
 
         // If player was mid-turn during active game, advance turn
@@ -823,13 +822,10 @@ public class BlackjackEngine
             // Send response in the same chat channel the command came from
             if (responseChannel.HasValue)
             {
-                string chatCmd = responseChannel.Value == SamplePlugin.Chat.ChatChannel.Party ? "/party " : "/say ";
-                LogAction($"Sending bet response via {responseChannel.Value}: {chatCmd}{name} bet updated to {amount}");
-                OnChatMessage?.Invoke($"{chatCmd}{name} bet updated to {amount}");
+                SendChatMessage($"{name} bet updated to {amount}");
             }
             else
             {
-                LogAction($"Using default SendChatMessage for bet response: {name} bet updated to {amount}");
                 SendChatMessage($"{name} bet updated to {amount}");
             }
 
@@ -842,16 +838,8 @@ public class BlackjackEngine
             else if (amount > CurrentTable.MaxBet) reason = $"maximum bet is {CurrentTable.MaxBet}";
             else if (amount > player.Bank) reason = $"insufficient funds (have {player.Bank})";
 
-            // Send error response in the same chat channel
-            if (responseChannel.HasValue)
-            {
-                string chatCmd = responseChannel.Value == SamplePlugin.Chat.ChatChannel.Party ? "/party " : "/say ";
-                OnChatMessage?.Invoke($"{chatCmd}{name} bet update failed: {reason}");
-            }
-            else
-            {
-                SendChatMessage($"{name} bet update failed: {reason}");
-            }
+            // Send error response
+            SendChatMessage($"{name} bet update failed: {reason}");
         }
     }
 
@@ -870,7 +858,7 @@ public class BlackjackEngine
     public void ToggleAFK(string name)
     {
         var player = GetPlayer(name);
-        if (player != null)
+        if (player == null || player.IsKicked) return;
         {
             player.IsAfk = !player.IsAfk;
             LogAction($"Toggled {name} AFK to {player.IsAfk}");
@@ -927,15 +915,28 @@ public class BlackjackEngine
 
     public Models.SessionSnapshot CreateSnapshot()
     {
-        var snap = new Models.SessionSnapshot { SavedAt = DateTime.Now };
+        var snap = new Models.SessionSnapshot
+        {
+            SavedAt  = DateTime.Now,
+            GameType = CurrentTable.GameType.ToString()
+        };
         foreach (var player in CurrentTable.Players.Values)
         {
             snap.Players.Add(new Models.PlayerSnapshot
             {
-                Name   = player.Name,
-                Server = player.Server,
-                Bank   = player.Bank,
-                Bet    = player.PersistentBet
+                Name            = player.Name,
+                Server          = player.Server,
+                Bank            = player.Bank,
+                Bet             = player.PersistentBet,
+                RouletteNetGains = player.RouletteNetGains,
+                CrapsNetGains   = player.CrapsNetGains,
+                BaccaratNetGains = player.BaccaratNetGains,
+                ChocoboNetGains = player.ChocoboNetGains,
+                PokerNetGains   = player.PokerNetGains,
+                UltimaWins      = player.UltimaWins,
+                UltimaLosses    = player.UltimaLosses,
+                GamesPlayed     = player.GamesPlayed,
+                GamesWon        = player.GamesWon,
             });
         }
         return snap;
@@ -949,16 +950,22 @@ public class BlackjackEngine
             if (!CurrentTable.Players.ContainsKey(key))
             {
                 var p = new Models.Player(ps.Name, ps.Server);
-                p.Bank          = ps.Bank;
-                p.PersistentBet = ps.Bet;
                 CurrentTable.Players[key] = p;
             }
-            else
-            {
-                CurrentTable.Players[key].Bank          = ps.Bank;
-                CurrentTable.Players[key].PersistentBet = ps.Bet;
-                CurrentTable.Players[key].IsKicked      = false;
-            }
+
+            var player = CurrentTable.Players[key];
+            player.Bank            = ps.Bank;
+            player.PersistentBet   = ps.Bet;
+            player.IsKicked        = false;
+            player.RouletteNetGains = ps.RouletteNetGains;
+            player.CrapsNetGains   = ps.CrapsNetGains;
+            player.BaccaratNetGains = ps.BaccaratNetGains;
+            player.ChocoboNetGains = ps.ChocoboNetGains;
+            player.PokerNetGains   = ps.PokerNetGains;
+            player.UltimaWins      = ps.UltimaWins;
+            player.UltimaLosses    = ps.UltimaLosses;
+            player.GamesPlayed     = ps.GamesPlayed;
+            player.GamesWon        = ps.GamesWon;
         }
         LogAction($"Session restored: {snap.Players.Count} players from {snap.SavedAt:HH:mm}");
         OnUIUpdate?.Invoke();

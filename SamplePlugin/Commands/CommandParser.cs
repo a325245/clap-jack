@@ -15,14 +15,18 @@ public class CommandParser
     private BaccaratEngine baccaratEngine;
     private ChocoboEngine chocoboEngine;
     private PokerEngine pokerEngine;
+    private UltimaEngine ultimaEngine;
 
     public Action<string>? OnChatMessage { get; set; }
     public Action<string, string>? OnPlayerTell { get; set; }
     public Action<string>? OnAdminEcho { get; set; }
+    /// <summary>Resolve a player name to their home world server. Used for tells to players not yet at the table.</summary>
+    public Func<string, string?>? ResolveServer { get; set; }
 
     public CommandParser(BlackjackEngine engine, RouletteEngine rouletteEngine,
                          CrapsEngine crapsEngine, BaccaratEngine baccaratEngine,
-                         ChocoboEngine chocoboEngine, PokerEngine pokerEngine)
+                         ChocoboEngine chocoboEngine, PokerEngine pokerEngine,
+                         UltimaEngine ultimaEngine)
     {
         this.engine = engine;
         this.rouletteEngine = rouletteEngine;
@@ -30,6 +34,7 @@ public class CommandParser
         this.baccaratEngine = baccaratEngine;
         this.chocoboEngine = chocoboEngine;
         this.pokerEngine = pokerEngine;
+        this.ultimaEngine = ultimaEngine;
     }
 
     // Commands that are valid with no arguments — accepted even when the player forgets the ">"
@@ -37,7 +42,8 @@ public class CommandParser
     {
         "HIT", "STAND", "DOUBLE", "SPLIT", "INSURANCE",
         "FOLD", "CHECK", "CALL", "ROLL", "TABLE",
-        "HELP", "RULES", "AFK"
+        "HELP", "RULES", "AFK",
+        "DRAW", "ULTIMA", "DEAL", "JOIN"
     };
 
     public void Parse(string senderName, string text, string adminName, DealerMode mode, ChatChannel sourceChannel)
@@ -55,20 +61,63 @@ public class CommandParser
         var parts = text.Substring(1).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0) return;
 
-        // No game active — ignore all commands
+        string command = parts[0].ToUpperInvariant();
+
+        // >JOIN sends game state info via tell — does NOT add the player to the table.
+        // The dealer adds players manually or via "Add Party".
+        if (command == "JOIN")
+        {
+            var p = engine.CurrentTable.Players.Values.FirstOrDefault(x =>
+                x.Name.Equals(senderName, StringComparison.OrdinalIgnoreCase));
+            string server = p != null && !string.IsNullOrEmpty(p.Server)
+                ? p.Server
+                : ResolveServer?.Invoke(senderName) ?? "Ultros";
+            string tellTarget = p != null ? $"{p.Name}@{server}" : $"{senderName}@{server}";
+
+            var table = engine.CurrentTable;
+            string gameLabel = table.GameType switch
+            {
+                GameType.Blackjack     => "Blackjack",
+                GameType.Roulette      => "Roulette",
+                GameType.Craps         => "Craps",
+                GameType.Baccarat      => "Mini Baccarat",
+                GameType.ChocoboRacing => "Chocobo Racing",
+                GameType.TexasHoldEm   => "Texas Hold'Em",
+                GameType.Ultima        => "Ultima!",
+                _                      => "None"
+            };
+
+            string bank = p != null ? $"Bank: {p.Bank}\uE049." : "You are not seated yet.";
+            string players = string.Join(", ", table.Players.Values
+                .Where(x => !x.IsKicked)
+                .Select(x => $"{table.GetDisplayName(x.Name)}({x.Bank})"));
+
+            OnPlayerTell?.Invoke(tellTarget,
+                $"Game: {gameLabel} | {bank} | Players: {players}");
+            return;
+        }
+
+        // No game active — ignore all other commands
         if (engine.CurrentTable.GameType == GameType.None) return;
 
-        string command = parts[0].ToUpperInvariant();
         bool isAdmin = senderName.Equals(adminName, StringComparison.OrdinalIgnoreCase);
 
         if (isAdmin)
+        {
+            // Admin gets admin-only commands (DEAL, SPIN, END, etc.) first.
+            // Then fall through to player commands so the admin can also
+            // HIT, STAND, BET, PLAY, etc. as if they were a regular player.
             HandleAdminCommand(senderName, command, parts, mode, sourceChannel);
-        else
             HandlePlayerCommand(senderName, command, parts, mode, sourceChannel);
+        }
+        else
+        {
+            HandlePlayerCommand(senderName, command, parts, mode, sourceChannel);
+        }
     }
 
     public void Parse(string senderName, string text, string adminName, DealerMode mode)
-        => Parse(senderName, text, adminName, mode, ChatChannel.Say);
+        => Parse(senderName, text, adminName, mode, ChatChannel.Party);
 
     private void SendResponse(string message, ChatChannel channel)
     {
@@ -81,6 +130,45 @@ public class CommandParser
 
     private void HandlePlayerCommand(string playerName, string command, string[] parts, DealerMode mode, ChatChannel sourceChannel)
     {
+        // ── Ultima! player commands ────────────────────────────────────────────
+        if (engine.CurrentTable.GameType == GameType.Ultima)
+        {
+            switch (command)
+            {
+                case "DEAL":
+                    if (!ultimaEngine.StartGame(playerName, out string dealErr))
+                        SendResponse(dealErr, sourceChannel);
+                    return;
+                case "PLAY":
+                    // >PLAY W3   or   >PLAY PL WATER   or   >PLAY PL4 FIRE
+                    string cardCode   = parts.Length >= 2 ? parts[1] : string.Empty;
+                    string? colorArg  = parts.Length >= 3 ? parts[2] : null;
+                    if (!ultimaEngine.PlayCard(playerName, cardCode, colorArg, out string playErr))
+                        SendResponse(playErr, sourceChannel);
+                    return;
+                case "DRAW":
+                    if (!ultimaEngine.DrawCard(playerName, out string drawErr))
+                        SendResponse(drawErr, sourceChannel);
+                    return;
+                case "ULTIMA":
+                    ultimaEngine.CallUltima(playerName);
+                    return;
+                case "SORT":
+                    bool byColor = parts.Length < 2 || !parts[1].Equals("RANK", StringComparison.OrdinalIgnoreCase);
+                    ultimaEngine.SortHand(playerName, byColor);
+                    return;
+                case "HAND":
+                    ultimaEngine.ResendHand(playerName);
+                    return;
+                case "RULES":
+                    SendUltimaRules(sourceChannel);
+                    return;
+                case "HELP":
+                    SendUltimaHelp(sourceChannel);
+                    return;
+            }
+        }
+
         // ── Texas Hold'Em player commands ─────────────────────────────────────
         if (engine.CurrentTable.GameType == GameType.TexasHoldEm)
         {
@@ -308,6 +396,24 @@ public class CommandParser
 
     private void HandleAdminCommand(string admin, string command, string[] parts, DealerMode mode, ChatChannel sourceChannel)
     {
+        // ── Ultima! admin-only: force-end ─────────────────────────────────────
+        if (engine.CurrentTable.GameType == GameType.Ultima)
+        {
+            switch (command)
+            {
+                case "END":
+                    ultimaEngine.ForceEnd();
+                    return;
+                case "HAND" when parts.Length >= 2:
+                    // Admin can resend another player's hand: >HAND Jess
+                    string target = string.Join(" ", parts.Skip(1));
+                    ultimaEngine.ResendHand(target);
+                    return;
+            }
+            // All other Ultima commands (PLAY, DRAW, DEAL, ULTIMA, SORT, RULES, HELP)
+            // fall through to HandlePlayerCommand so admin plays as a normal player.
+        }
+
         // ── Texas Hold'Em admin: > DEAL ───────────────────────────────────────
         if (command == "DEAL" && engine.CurrentTable.GameType == GameType.TexasHoldEm)
         {
@@ -420,5 +526,19 @@ public class CommandParser
             GameType.TexasHoldEm  => "[POKER COMMANDS] >CALL  >CHECK  >RAISE [amt]  >FOLD  >ALL IN  | >BANK  >AFK  >RULES",
             _                      => "[BLACKJACK COMMANDS] >HIT  >STAND  >DOUBLE  >SPLIT  >INSURANCE  >BET [amt]  | >BANK  >AFK  >RULES"
         };
+    }
+
+    private void SendUltimaRules(ChatChannel ch)
+    {
+        SendResponse("ULTIMA! RULES: Match the top card by color or number. " +
+            "Counterspell = skip, Rewind = reverse, Summon+2 = next draws 2. " +
+            "Polymorph = wild (choose color), Polymorph+4 = wild + next draws 4. " +
+            "Call >ULTIMA when you have 1 card left. First to empty their hand wins!", ch);
+    }
+
+    private void SendUltimaHelp(ChatChannel ch)
+    {
+        SendResponse("[ULTIMA COMMANDS] >PLAY [code] [color]  >DRAW  >ULTIMA  >HAND  " +
+            ">SORT COLOR  >SORT RANK  >DEAL  >RULES  >HELP", ch);
     }
 }
