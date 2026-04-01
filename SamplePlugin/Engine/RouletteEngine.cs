@@ -34,6 +34,7 @@ public class RouletteEngine
     }
 
     private void QueueMessage(string message) => MessageQueue.Enqueue(message);
+    public void ClearQueue() => MessageQueue.Clear();
 
     public void ProcessMessageQueue()
     {

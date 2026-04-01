@@ -56,20 +56,38 @@ public class PlayerViewWindow
     {
         var state = _parser.State;
 
-        // ── Join / Sync button — always visible ──────────────────────────────
+        // ── Add Party button — always visible ─────────────────────────────────
         {
-            bool hasGame = !string.IsNullOrEmpty(state.DetectedGame);
-            string btnLabel = hasGame ? "\u21bb Sync" : "\u25ba JOIN TABLE";
-            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.15f, 0.45f, 0.15f, 1f));
-            if (ImGui.Button(btnLabel, new Vector2(hasGame ? 70 : 140, 28)))
-                SendCmd("JOIN");
+            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.15f, 0.35f, 0.55f, 1f));
+            if (ImGui.Button("\u2795 Add Party", new Vector2(90, 28)))
+                _plugin.AddPartyToTable();
             ImGui.PopStyleColor();
-            if (!hasGame)
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Add all party members to the table");
+
+            // Reset button — top right
+            ImGui.SameLine(ImGui.GetWindowWidth() - 78f);
+            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.55f, 0.08f, 0.08f, 1f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.75f, 0.15f, 0.15f, 1f));
+            if (ImGui.Button("RESET", new Vector2(60, 28)))
             {
-                ImGui.SameLine();
-                ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
-                    "Send >JOIN in chat to add yourself to the dealer's table.");
+                _plugin.FullReset();
+                state.DetectedGame    = string.Empty;
+                state.BJPlayers       = new();
+                state.BJDealerCards   = new();
+                state.PokerCommunity  = new();
+                state.PokerPlayers    = new();
+                state.PokerShowdown   = new();
+                state.UltimaHand      = new();
+                state.UltimaPlayerOrder = new();
+                state.UltimaCardCounts  = new();
+                state.UltimaTopCard     = null;
+                state.UltimaWinner      = string.Empty;
+                state.PlayerBanks       = new(StringComparer.OrdinalIgnoreCase);
+                state.Feed.Clear();
             }
+            ImGui.PopStyleColor(2);
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Reset everything to factory state");
+
             ImGui.Separator();
         }
 
@@ -102,6 +120,7 @@ public class PlayerViewWindow
         if (!string.IsNullOrEmpty(state.DetectedGame))
         {
             ImGui.Separator();
+            DrawRulesDropdown(state);
             DrawCommandButtons(state);
         }
     }
@@ -139,9 +158,76 @@ public class PlayerViewWindow
             Vector4 col = isDealer ? new Vector4(1f, 0.84f, 0f, 1f)
                         : isMe     ? new Vector4(0.4f, 1f, 0.6f, 1f)
                         :            new Vector4(0.85f, 0.85f, 0.85f, 1f);
-            ImGui.TextColored(col, (isDealer ? "★ " : "  ") + (isMe ? "◎ " : "") + player.Name);
+            ImGui.TextColored(col, (isDealer ? "\u2605 " : "  ") + (isMe ? "\u25CE " : "") + player.Name);
             ImGui.SameLine(260);
-            ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), $"{player.Bank}\uE049");
+            // Prefer bank from chat messages; fall back to engine table
+            int dispBank = state.PlayerBanks.TryGetValue(player.Name, out int cb) ? cb : player.Bank;
+            ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), $"{dispBank}\uE049");
+        }
+    }
+
+    // ── Rules dropdown ──────────────────────────────────────────────────────
+
+    private void DrawRulesDropdown(PlayerViewState state)
+    {
+        string header = state.DetectedGame switch
+        {
+            "Blackjack" => "Blackjack Rules",
+            "Roulette"  => "Roulette Rules",
+            "Craps"     => "Craps Rules",
+            "Baccarat"  => "Baccarat Rules",
+            "Chocobo"   => "Chocobo Racing Rules",
+            "Poker"     => "Texas Hold'Em Rules",
+            "Ultima"    => "Ultima! Rules",
+            _           => "Rules"
+        };
+
+        if (ImGui.CollapsingHeader(header))
+        {
+            switch (state.DetectedGame)
+            {
+                case "Blackjack":
+                    ImGui.TextWrapped("Beat the dealer without exceeding 21. Ace=1 or 11, face cards=10.");
+                    ImGui.TextWrapped("Blackjack (Ace+10) pays 1.5x. Dealer hits on soft 16 or less.");
+                    ImGui.TextWrapped("Split matching pairs. Double Down: double bet, one more card.");
+                    ImGui.TextWrapped("Insurance: when dealer shows Ace, pays 2:1 if dealer has BJ.");
+                    ImGui.TextColored(new Vector4(1,1,0,1), ">HIT  >STAND  >DOUBLE  >SPLIT  >INSURANCE  >BET [amt]");
+                    break;
+                case "Roulette":
+                    ImGui.TextWrapped("Wheel has 37 slots (0-36). 0=green, others alternate red/black.");
+                    ImGui.TextWrapped("Straight numbers pay 35:1. RED/BLACK, EVEN/ODD, 1-18/19-36 pay 1:1.");
+                    ImGui.TextWrapped("1ST/2ND/3RD dozen pay 2:1. COL1/COL2/COL3 pay 2:1.");
+                    ImGui.TextColored(new Vector4(1,1,0,1), ">BET [amt] ON [target]  (e.g. >BET 100 ON RED)");
+                    break;
+                case "Craps":
+                    ImGui.TextWrapped("COME-OUT: 7/11=Natural (Pass wins, DP loses). 2/3=Craps (DP wins, Pass loses). 12=Pass loses, DP push. 4-10 sets POINT.");
+                    ImGui.TextWrapped("POINT ROUND: Roll Point=Pass wins. 7-out=DP wins, Pass/Place/Big6/Big8 lose.");
+                    ImGui.TextWrapped("FIELD: 2/12=2:1; 3/4/9/10/11=1:1; 5/6/7/8=lose. BIG 6/8: 1:1 before 7. PLACE: 4/10=9:5 5/9=7:5 6/8=7:6.");
+                    ImGui.TextColored(new Vector4(1,1,0,1), ">BET PASS/DONTPASS/FIELD/BIG6/BIG8 [amt]  >BET PLACE [4-10] [amt]  >ROLL");
+                    break;
+                case "Baccarat":
+                    ImGui.TextWrapped("Closest to 9 wins. Ace=1, 2-9=face, 10/J/Q/K=0. Score = sum mod 10.");
+                    ImGui.TextWrapped("Natural: 8 or 9 on first two cards ends round. Player draws on 0-5, stands 6-7.");
+                    ImGui.TextWrapped("Payouts: Player 1:1, Banker 1:1, Tie 8:1.");
+                    ImGui.TextColored(new Vector4(1,1,0,1), ">BET PLAYER/BANKER/TIE [amt]");
+                    break;
+                case "Chocobo":
+                    ImGui.TextWrapped("8 racers run a 30-second race. Each has Speed, Endurance, and X-Factor.");
+                    ImGui.TextWrapped("Winning bet pays stake \u00D7 the racer's odds.");
+                    ImGui.TextColored(new Vector4(1,1,0,1), ">BET [#1-8 or name] [amt]");
+                    break;
+                case "Poker":
+                    ImGui.TextWrapped("Each player gets 2 hole cards + 5 community cards over 4 rounds (Pre-Flop, Flop, Turn, River). Best 5-card hand wins.");
+                    ImGui.TextWrapped("Hands: Royal Flush > Straight Flush > 4-Kind > Full House > Flush > Straight > 3-Kind > Two Pair > Pair > High Card.");
+                    ImGui.TextColored(new Vector4(1,1,0,1), ">CALL  >CHECK  >RAISE [amt]  >FOLD  >ALL IN");
+                    break;
+                case "Ultima":
+                    ImGui.TextWrapped("Match the top card by color or number. First to empty hand wins!");
+                    ImGui.TextWrapped("Counterspell = skip next. Rewind = reverse direction. Summon+2 = next draws 2.");
+                    ImGui.TextWrapped("Polymorph = wild (choose color). Polymorph+4 = wild + next draws 4.");
+                    ImGui.TextColored(new Vector4(1,1,0,1), ">PLAY [code] [color]  >DRAW  >HAND  >SORT COLOR/RANK");
+                    break;
+            }
         }
     }
 
@@ -172,15 +258,31 @@ public class PlayerViewWindow
 
     private void DrawBJCommands(PlayerViewState state)
     {
+        string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+        bool myTurn = !string.IsNullOrEmpty(myName) && state.BJActive &&
+            state.BJCurrentPlayer.StartsWith(myName.Split(' ')[0], StringComparison.OrdinalIgnoreCase);
+        var cmds = state.BJAvailableCmds;
+        bool hasCmds = cmds.Count > 0;
+
+        ImGui.BeginDisabled(!myTurn || (hasCmds && !cmds.Contains("HIT")));
         if (ImGui.Button("HIT",       new Vector2(65, 24))) SendCmd("HIT");
+        ImGui.EndDisabled();
         ImGui.SameLine();
+        ImGui.BeginDisabled(!myTurn || (hasCmds && !cmds.Contains("STAND")));
         if (ImGui.Button("STAND",     new Vector2(70, 24))) SendCmd("STAND");
+        ImGui.EndDisabled();
         ImGui.SameLine();
+        ImGui.BeginDisabled(!myTurn || (hasCmds && !cmds.Contains("DOUBLE")));
         if (ImGui.Button("DOUBLE",    new Vector2(75, 24))) SendCmd("DOUBLE");
+        ImGui.EndDisabled();
         ImGui.SameLine();
+        ImGui.BeginDisabled(!myTurn || (hasCmds && !cmds.Contains("SPLIT")));
         if (ImGui.Button("SPLIT",     new Vector2(65, 24))) SendCmd("SPLIT");
+        ImGui.EndDisabled();
         ImGui.SameLine();
+        ImGui.BeginDisabled(!myTurn || (hasCmds && !cmds.Contains("INSURANCE")));
         if (ImGui.Button("INSURANCE", new Vector2(95, 24))) SendCmd("INSURANCE");
+        ImGui.EndDisabled();
 
         ImGui.SameLine(420);
         string betAmt = state.PVBetAmount;
@@ -213,11 +315,17 @@ public class PlayerViewWindow
             SendCmd($"BET {betTypes[state.PVCrapsBetType]} {state.PVBetAmount}");
 
         ImGui.SameLine(0, 16);
+        string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+        bool isShooter = !string.IsNullOrEmpty(myName) &&
+            state.CrapsShooter.StartsWith(myName.Split(' ')[0], StringComparison.OrdinalIgnoreCase);
+        ImGui.BeginDisabled(!isShooter);
         if (ImGui.Button("ROLL", new Vector2(56, 24))) SendCmd("ROLL");
+        ImGui.EndDisabled();
     }
 
     private void DrawRouletteCommands(PlayerViewState state)
     {
+        ImGui.BeginDisabled(state.RouletteSpinning);
         string betAmt = state.PVBetAmount;
         ImGui.SetNextItemWidth(72);
         if (ImGui.InputText("##pvroubetamt", ref betAmt, 10)) state.PVBetAmount = betAmt;
@@ -231,16 +339,30 @@ public class PlayerViewWindow
         ImGui.SameLine();
         if (ImGui.Button("BET##pvrou", new Vector2(55, 24)))
             SendCmd($"BET {state.PVBetAmount} ON {state.PVRouletteTarget}");
+        ImGui.EndDisabled();
     }
 
     private void DrawPokerCommands(PlayerViewState state)
     {
+        string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+        bool myTurn = !string.IsNullOrEmpty(myName) &&
+            state.PokerActionTo.StartsWith(myName.Split(' ')[0], StringComparison.OrdinalIgnoreCase);
+        var cmds = state.PokerAvailCmds;
+        bool hasCmds = cmds.Count > 0;
+
+        ImGui.BeginDisabled(!myTurn || (hasCmds && !cmds.Contains("FOLD")));
         if (ImGui.Button("FOLD",    new Vector2(62, 24))) SendCmd("FOLD");
+        ImGui.EndDisabled();
         ImGui.SameLine();
+        ImGui.BeginDisabled(!myTurn || (hasCmds && !cmds.Contains("CHECK")));
         if (ImGui.Button("CHECK",   new Vector2(68, 24))) SendCmd("CHECK");
+        ImGui.EndDisabled();
         ImGui.SameLine();
+        ImGui.BeginDisabled(!myTurn || (hasCmds && !cmds.Contains("CALL")));
         if (ImGui.Button("CALL",    new Vector2(62, 24))) SendCmd("CALL");
+        ImGui.EndDisabled();
         ImGui.SameLine();
+        ImGui.BeginDisabled(!myTurn);
         if (ImGui.Button("ALL IN",  new Vector2(72, 24))) SendCmd("ALL IN");
 
         ImGui.SameLine(300);
@@ -250,10 +372,12 @@ public class PlayerViewWindow
         ImGui.SameLine();
         if (ImGui.Button($"RAISE##pvpoker", new Vector2(65, 24)))
             SendCmd($"RAISE {state.PVPokerRaiseAmt}");
+        ImGui.EndDisabled();
     }
 
     private void DrawBaccaratCommands(PlayerViewState state)
     {
+        ImGui.BeginDisabled(state.BacActive);
         string betAmt = state.PVBetAmount;
         ImGui.Text("Bet");
         ImGui.SameLine();
@@ -269,6 +393,7 @@ public class PlayerViewWindow
         ImGui.SameLine();
         if (ImGui.Button("BET##pvbac", new Vector2(55, 24)))
             SendCmd($"BET {betTypes[state.PVBaccaratBetType]} {state.PVBetAmount}");
+        ImGui.EndDisabled();
     }
 
     private void DrawChocoboCommands(PlayerViewState state)
@@ -279,6 +404,7 @@ public class PlayerViewWindow
             return;
         }
 
+        ImGui.BeginDisabled(!state.ChocoboBettingOpen || state.ChocoboRacing);
         string betAmt = state.PVBetAmount;
         ImGui.Text("Bet");
         ImGui.SameLine();
@@ -305,6 +431,7 @@ public class PlayerViewWindow
                     SendCmd($"BET {racer.Number} {state.PVBetAmount}");
             }
         }
+        ImGui.EndDisabled();
     }
 
     // ── Baccarat view ─────────────────────────────────────────────────────────
@@ -316,14 +443,42 @@ public class PlayerViewWindow
 
         if (!string.IsNullOrEmpty(state.BacPlayerCards))
         {
+            var dl  = ImGui.GetWindowDrawList();
+            var cSz = new Vector2(52f, 74f);
+            float gap = 8f;
+
+            // ── Player hand ──────────────────────────────────────────────
             ImGui.Spacing();
             ImGui.TextColored(new Vector4(0.4f, 0.7f, 1f, 1f), "PLAYER");
-            ImGui.SameLine(100);
-            ImGui.Text($"{state.BacPlayerCards}  ({state.BacPlayerScore})");
+            ImGui.SameLine(80);
+            var pCards = state.BacPlayerCards.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            {
+                var pos = ImGui.GetCursorScreenPos();
+                for (int i = 0; i < pCards.Length; i++)
+                    DrawCard(dl, pos + new Vector2(i * (cSz.X + gap), 0), cSz, pCards[i]);
+                ImGui.SameLine();
+                ImGui.Dummy(new Vector2(pCards.Length * (cSz.X + gap), cSz.Y));
+                ImGui.SameLine();
+                ImGui.SetCursorPosY(ImGui.GetCursorPosY() + cSz.Y * 0.5f - ImGui.GetTextLineHeight() * 0.5f);
+                ImGui.TextColored(new Vector4(0.4f, 0.7f, 1f, 1f), $"  ({state.BacPlayerScore})");
+            }
 
+            ImGui.Spacing();
+
+            // ── Banker hand ──────────────────────────────────────────────
             ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "BANKER");
-            ImGui.SameLine(100);
-            ImGui.Text($"{state.BacBankerCards}  ({state.BacBankerScore})");
+            ImGui.SameLine(80);
+            var bCards = state.BacBankerCards.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            {
+                var pos = ImGui.GetCursorScreenPos();
+                for (int i = 0; i < bCards.Length; i++)
+                    DrawCard(dl, pos + new Vector2(i * (cSz.X + gap), 0), cSz, bCards[i]);
+                ImGui.SameLine();
+                ImGui.Dummy(new Vector2(bCards.Length * (cSz.X + gap), cSz.Y));
+                ImGui.SameLine();
+                ImGui.SetCursorPosY(ImGui.GetCursorPosY() + cSz.Y * 0.5f - ImGui.GetTextLineHeight() * 0.5f);
+                ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), $"  ({state.BacBankerScore})");
+            }
 
             if (!string.IsNullOrEmpty(state.BacResult))
             {
@@ -350,7 +505,12 @@ public class PlayerViewWindow
         ImGui.TextColored(new Vector4(0.84f, 0.76f, 0.08f, 1f), "\uD83D\uDC26 Chocobo Racing");
         ImGui.Separator();
 
-        if (state.ChocoboRacers.Count > 0)
+        if (state.ChocoboRacing && !string.IsNullOrEmpty(state.ChocoboRaceHash) && state.ChocoboRacers.Count > 0)
+        {
+            DrawChocoboRaceAnimation(state);
+            ImGui.Spacing();
+        }
+        else if (state.ChocoboRacers.Count > 0)
         {
             ImGui.Spacing();
             ImGui.TextColored(new Vector4(0.5f, 1f, 1f, 1f), "TODAY'S RACERS");
@@ -375,10 +535,67 @@ public class PlayerViewWindow
         {
             ImGui.Spacing();
             ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
-                "Waiting for the dealer to open betting…");
+                "Waiting for the dealer to open betting\u2026");
         }
         ImGui.Spacing();
     }
+
+    private void DrawChocoboRaceAnimation(PlayerViewState state)
+    {
+        var progress = Engine.ChocoboEngine.DecodeRaceHash(state.ChocoboRaceHash);
+        if (progress == null) return;
+
+        double elapsed = (DateTime.Now - state.ChocoboRaceStart).TotalMilliseconds;
+        float  frac    = (float)Math.Clamp(elapsed / 30000.0, 0.0, 1.0);
+
+        int segCount  = progress.GetLength(1);
+        float segFrac = frac * (segCount - 1);
+        int   segLow  = Math.Clamp((int)segFrac, 0, segCount - 2);
+        float segT    = segFrac - segLow;
+
+        var dl     = ImGui.GetWindowDrawList();
+        var origin = ImGui.GetCursorScreenPos();
+        float W    = Math.Max(ImGui.GetContentRegionAvail().X - 8f, 300f);
+        float laneH = 22f;
+        int nRacers = Math.Min(state.ChocoboRacers.Count, progress.GetLength(0));
+        float H     = nRacers * laneH + 4f;
+
+        uint trackBg    = ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.10f, 0.06f, 0.9f));
+        uint laneLine   = ImGui.ColorConvertFloat4ToU32(new Vector4(0.3f, 0.3f, 0.2f, 0.4f));
+        uint finishLine = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.3f));
+        dl.AddRectFilled(origin, origin + new Vector2(W, H), trackBg, 4f);
+        dl.AddLine(origin + new Vector2(W - 2, 0), origin + new Vector2(W - 2, H), finishLine, 2f);
+
+        float labelW = 90f;
+        float trackW = W - labelW - 10f;
+
+        var sorted = state.ChocoboRacers.OrderBy(x => x.Number).ToList();
+        for (int r = 0; r < nRacers; r++)
+        {
+            float y = origin.Y + r * laneH + 2f;
+            if (r > 0)
+                dl.AddLine(new Vector2(origin.X, y), new Vector2(origin.X + W, y), laneLine);
+
+            float p0  = progress[r, segLow];
+            float p1  = progress[r, Math.Min(segLow + 1, segCount - 1)];
+            float pos = p0 + (p1 - p0) * segT;
+            float dotX = origin.X + labelW + pos * trackW;
+            float dotY = y + laneH * 0.5f;
+
+            string label = $"#{sorted[r].Number} {sorted[r].Name}";
+            if (label.Length > 12) label = label[..12];
+            dl.AddText(new Vector2(origin.X + 4, y + 2),
+                ImGui.ColorConvertFloat4ToU32(new Vector4(0.75f, 0.75f, 0.6f, 1f)), label);
+            dl.AddCircleFilled(new Vector2(dotX, dotY), 6f,
+                ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.84f, 0f, 1f)));
+        }
+
+        ImGui.Dummy(new Vector2(W, H + 4f));
+        int secsLeft = Math.Max(0, 30 - (int)(elapsed / 1000.0));
+        ImGui.TextColored(new Vector4(0.8f, 0.8f, 0.4f, 1f),
+            frac >= 1.0f ? "Race complete!" : $"Race in progress\u2026 {secsLeft}s");
+    }
+
 
     // ── Card helpers ──────────────────────────────────────────────────────────
 
@@ -457,9 +674,13 @@ public class PlayerViewWindow
             {
                 bool isMe = !string.IsNullOrEmpty(myName) &&
                              hand.Name.Equals(myName, StringComparison.OrdinalIgnoreCase);
-                Vector4 nameCol = isMe ? new Vector4(0.3f, 1f, 0.5f, 1f)
-                                       : new Vector4(0.85f, 0.85f, 0.85f, 1f);
-                ImGui.TextColored(nameCol, $"{(isMe ? "► " : "  ")}{hand.Name}");
+                bool isTurn = !string.IsNullOrEmpty(state.BJCurrentPlayer) &&
+                    hand.Name.StartsWith(state.BJCurrentPlayer.Split(' ')[0], StringComparison.OrdinalIgnoreCase);
+                string marker = isTurn ? "\u25ba " : "  ";
+                Vector4 nameCol = isTurn ? new Vector4(1f, 1f, 0f, 1f)
+                                 : isMe  ? new Vector4(0.3f, 1f, 0.5f, 1f)
+                                 :         new Vector4(0.85f, 0.85f, 0.85f, 1f);
+                ImGui.TextColored(nameCol, $"{marker}{hand.Name}");
                 ImGui.SameLine(nameColW);
 
                 var rpos = ImGui.GetCursorScreenPos();
@@ -731,7 +952,8 @@ public class PlayerViewWindow
             if (!lst.Contains(bet.PlayerName)) lst.Add(bet.PlayerName);
         }
 
-        DrawRouletteGrid(state, betMap);
+        string myNameRou = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+        DrawRouletteGrid(state, betMap, myNameRou);
     }
 
     private void DrawPVRouletteWheel(PlayerViewState state)
@@ -811,7 +1033,7 @@ public class PlayerViewWindow
         ImGui.SetCursorScreenPos(new Vector2(pos.X, pos.Y + 160));
     }
 
-    private void DrawRouletteGrid(PlayerViewState state, Dictionary<string, List<string>> betMap)
+    private void DrawRouletteGrid(PlayerViewState state, Dictionary<string, List<string>> betMap, string myName)
     {
         var  dl       = ImGui.GetWindowDrawList();
         var  startPos = ImGui.GetCursorScreenPos();
@@ -832,8 +1054,11 @@ public class PlayerViewWindow
         var z0sz = ImGui.CalcTextSize("0");
         dl.AddText(new Vector2(zTL.X + cellW * 0.5f - z0sz.X * 0.5f,
             zTL.Y + zeroH * 0.5f - z0sz.Y * 0.5f), zWin ? 0xFF000000u : 0xFFFFFFFFu, "0");
-        if (betMap.ContainsKey("0") && !zWin)
-            dl.AddCircleFilled(new Vector2(zTL.X + cellW * 0.5f, zTL.Y + zeroH * 0.5f), 6f, 0xCCFFCC22u, 12);
+        if (betMap.TryGetValue("0", out var z0bets) && !zWin)
+        {
+            uint z0c = z0bets.Any(n => n.Equals(myName, StringComparison.OrdinalIgnoreCase)) ? 0xCC22FF44u : 0xCCFF8822u;
+            dl.AddCircleFilled(new Vector2(zTL.X + cellW * 0.5f, zTL.Y + zeroH * 0.5f), 6f, z0c, 12);
+        }
         if (mouse.X >= zTL.X && mouse.X < zBR.X && mouse.Y >= zTL.Y && mouse.Y < zBR.Y
             && betMap.TryGetValue("0", out var z0p))
         { ttTitle = "0"; ttBody = string.Join(", ", z0p); }
@@ -857,8 +1082,11 @@ public class PlayerViewWindow
                 dl.AddText(new Vector2(x + cellW*0.5f - nSz.X*0.5f, y + cellH*0.5f - nSz.Y*0.5f),
                     isW ? 0xFF000000u : 0xFFFFFFFFu, ns);
 
-                if (betMap.ContainsKey(ns) && !isW)
-                    dl.AddCircleFilled(new Vector2(x + cellW*0.5f, y + cellH*0.5f), 6f, 0xCCFFCC22u, 12);
+                if (betMap.TryGetValue(ns, out var nBets) && !isW)
+                {
+                    uint nc = nBets.Any(n => n.Equals(myName, StringComparison.OrdinalIgnoreCase)) ? 0xCC22FF44u : 0xCCFF8822u;
+                    dl.AddCircleFilled(new Vector2(x + cellW*0.5f, y + cellH*0.5f), 6f, nc, 12);
+                }
 
                 if (mouse.X >= x && mouse.X < x+cellW && mouse.Y >= y && mouse.Y < y+cellH
                     && betMap.TryGetValue(ns, out var nbp))
@@ -882,8 +1110,11 @@ public class PlayerViewWindow
             var oSz = ImGui.CalcTextSize(outside[i]);
             dl.AddText(new Vector2(ox + obW*0.5f - oSz.X*0.5f, outsideY + cellH*0.5f - oSz.Y*0.5f),
                 0xFFFFFFFFu, outside[i]);
-            if (ob)
-                dl.AddCircleFilled(new Vector2(ox + obW*0.5f, outsideY + cellH*0.5f), 6f, 0xCCFFCC22u, 12);
+            if (betMap.TryGetValue(outside[i], out var oBets))
+            {
+                uint oc = oBets.Any(n => n.Equals(myName, StringComparison.OrdinalIgnoreCase)) ? 0xCC22FF44u : 0xCCFF8822u;
+                dl.AddCircleFilled(new Vector2(ox + obW*0.5f, outsideY + cellH*0.5f), 6f, oc, 12);
+            }
             if (mouse.X >= ox && mouse.X < ox+obW && mouse.Y >= outsideY && mouse.Y < outsideY+cellH
                 && betMap.TryGetValue(outside[i], out var obp))
             { ttTitle = outside[i]; ttBody = string.Join(", ", obp); }
@@ -968,12 +1199,14 @@ public class PlayerViewWindow
         ImGui.Dummy(new Vector2(0, 6f));
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 8f);
         var origin = ImGui.GetCursorScreenPos();
-        float W = 600f, H = 200f;
+        float W = 600f, H = 240f;
         var center = origin + new Vector2(W * 0.5f, H * 0.5f);
 
         uint felt   = ImGui.ColorConvertFloat4ToU32(new Vector4(0.07f, 0.33f, 0.07f, 1f));
         uint border = ImGui.ColorConvertFloat4ToU32(new Vector4(0.55f, 0.38f, 0.08f, 1f));
         uint potCol = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.84f, 0f, 1f));
+        uint txtW   = ImGui.ColorConvertFloat4ToU32(new Vector4(0.9f, 0.9f, 0.9f, 1f));
+        uint txtG   = ImGui.ColorConvertFloat4ToU32(new Vector4(0.6f, 0.6f, 0.6f, 1f));
 
         float rx = 210f, ry = 72f;
         for (int i = 0; i < 48; i++)
@@ -993,7 +1226,7 @@ public class PlayerViewWindow
         {
             string potStr = $"POT: {state.PokerPot}\uE049";
             var pSz = ImGui.CalcTextSize(potStr);
-            dl.AddText(center - pSz * 0.5f + new Vector2(0, -H * 0.22f), potCol, potStr);
+            dl.AddText(center - pSz * 0.5f + new Vector2(0, -H * 0.22f - 5f), potCol, potStr);
         }
 
         if (state.PokerCommunity.Count > 0)
@@ -1019,6 +1252,59 @@ public class PlayerViewWindow
             string ph = state.PokerPhaseLabel.ToUpperInvariant();
             var phSz = ImGui.CalcTextSize(ph);
             dl.AddText(center - phSz * 0.5f + new Vector2(0, H * 0.28f), phCol, ph);
+        }
+
+        // ── Player seats around the oval ──────────────────────────────────
+        int nPlayers = state.PokerPlayers.Count;
+        if (nPlayers > 0)
+        {
+            float seatRx = 250f, seatRy = 100f;
+            float seatW = 92f, seatH = 44f;
+            for (int si = 0; si < nPlayers && si < 8; si++)
+            {
+                double angle = -Math.PI / 2.0 + si * 2.0 * Math.PI / Math.Max(nPlayers, 2);
+                float sx = center.X + (float)(Math.Cos(angle) * seatRx) - seatW * 0.5f;
+                float sy = center.Y + (float)(Math.Sin(angle) * seatRy) - seatH * 0.5f;
+                var sPos = new Vector2(sx, sy);
+
+                var p = state.PokerPlayers[si];
+                bool isActing = !string.IsNullOrEmpty(state.PokerActionTo) &&
+                    p.Name.StartsWith(state.PokerActionTo.Split(' ')[0], StringComparison.OrdinalIgnoreCase);
+                uint bgC = p.Status switch
+                {
+                    "Folded" => ImGui.ColorConvertFloat4ToU32(new Vector4(0.2f, 0.1f, 0.1f, 0.85f)),
+                    "AllIn"  => ImGui.ColorConvertFloat4ToU32(new Vector4(0.35f, 0.15f, 0f, 0.9f)),
+                    _        => ImGui.ColorConvertFloat4ToU32(isActing
+                        ? new Vector4(0.1f, 0.2f, 0.12f, 0.9f)
+                        : new Vector4(0.12f, 0.12f, 0.22f, 0.85f))
+                };
+                uint rimC = p.Status switch
+                {
+                    "Folded" => ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f, 0.2f, 0.2f, 1f)),
+                    "AllIn"  => ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.5f, 0f, 1f)),
+                    _        => ImGui.ColorConvertFloat4ToU32(isActing
+                        ? new Vector4(0.3f, 1f, 0.4f, 1f)
+                        : new Vector4(0.4f, 0.4f, 0.6f, 1f))
+                };
+
+                dl.AddRectFilled(sPos, sPos + new Vector2(seatW, seatH), bgC, 4f);
+                dl.AddRect(sPos, sPos + new Vector2(seatW, seatH), rimC, 4f);
+
+                string disp = p.Name.Contains(' ') ? p.Name.Split(' ')[0] : p.Name;
+                if (disp.Length > 10) disp = disp[..10];
+                dl.AddText(new Vector2(sPos.X + 4, sPos.Y + 2), txtW, disp);
+
+                string bankStr = p.Bank > 0 ? $"{p.Bank}\uE049" : "";
+                if (!string.IsNullOrEmpty(bankStr))
+                    dl.AddText(new Vector2(sPos.X + 4, sPos.Y + 18), txtG, bankStr);
+
+                string statusLine = p.Status == "Folded" ? "FOLD"
+                                  : p.Status == "AllIn"  ? "ALL IN"
+                                  : p.Bet > 0            ? $"Bet: {p.Bet}\uE049"
+                                  : "";
+                if (!string.IsNullOrEmpty(statusLine))
+                    dl.AddText(new Vector2(sPos.X + 4, sPos.Y + seatH - 14), txtG, statusLine);
+            }
         }
 
         ImGui.Dummy(new Vector2(W, H + 4f));
@@ -1109,7 +1395,7 @@ public class PlayerViewWindow
         {
             bool   cw     = state.UltimaClockwise;
             float  ar     = 56f;
-            uint   arcCol = ImGui.ColorConvertFloat4ToU32(new Vector4(0.8f, 0.8f, 0.3f, 0.65f));
+            uint   arcCol = ImGui.ColorConvertFloat4ToU32(new Vector4(0.9f, 0.9f, 0.3f, 0.8f));
             float  start  = cw ? -(float)(Math.PI * 0.7) : -(float)(Math.PI * 0.3);
             float  span   = cw ?  (float)(Math.PI * 1.4) : -(float)(Math.PI * 1.4);
             int    segs   = 22;
@@ -1119,7 +1405,7 @@ public class PlayerViewWindow
                 float a2 = start + span * (i + 1) / segs;
                 dl.AddLine(center + new Vector2(MathF.Cos(a1)*ar, MathF.Sin(a1)*ar),
                            center + new Vector2(MathF.Cos(a2)*ar, MathF.Sin(a2)*ar),
-                           arcCol, 2.8f);
+                           arcCol, 3.2f);
             }
             // Arrowhead at the END of the arc, triangle points along the tangent
             float ae   = start + span;
@@ -1130,6 +1416,10 @@ public class PlayerViewWindow
                 tip + new Vector2(MathF.Cos(tang+MathF.PI-0.45f)*10, MathF.Sin(tang+MathF.PI-0.45f)*10),
                 tip + new Vector2(MathF.Cos(tang+MathF.PI+0.45f)*10, MathF.Sin(tang+MathF.PI+0.45f)*10),
                 arcCol);
+            // Direction label
+            string dirLabel = cw ? "\u21BB" : "\u21BA";
+            var dlsz = ImGui.CalcTextSize(dirLabel);
+            dl.AddText(center + new Vector2(-dlsz.X * 0.5f, ar + 4), arcCol, dirLabel);
         }
 
         // Top card
@@ -1272,14 +1562,17 @@ public class PlayerViewWindow
         {
             var  card = hand[i];
             bool sel  = state.UltimaSelectedIdx == i;
+            bool playable = card.IsWild || state.UltimaTopCard == null
+                || card.Color == state.UltimaActiveColor
+                || card.Type  == state.UltimaTopCard.Type;
 
             // Position InvisibleButton — height includes the lift zone above the card
             ImGui.SetCursorScreenPos(new Vector2(startPos.X + i*(cw+gap), startPos.Y - lift));
             bool clicked = ImGui.InvisibleButton($"##ucard_{i}", new Vector2(cw, ch + lift));
             bool hover   = ImGui.IsItemHovered();
 
-            // Visual: lifted when selected or hovered
-            float cardY = (sel || hover) ? startPos.Y - lift : startPos.Y;
+            // Visual: lifted when selected or hovered (only if playable or wild)
+            float cardY = ((sel || hover) && playable) ? startPos.Y - lift : startPos.Y;
             var   cpos  = new Vector2(startPos.X + i*(cw+gap), cardY);
 
             if (sel)
@@ -1288,10 +1581,15 @@ public class PlayerViewWindow
 
             DrawUltimaCardAt(dl, cpos, cw, ch, card);
 
-            if (hover)
-                ImGui.SetTooltip(card.DisplayName);
+            // Dim overlay for non-playable cards
+            if (!playable && myTurn)
+                dl.AddRectFilled(cpos, cpos + new Vector2(cw, ch),
+                    ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.45f)), 6f);
 
-            if (clicked)
+            if (hover)
+                ImGui.SetTooltip(playable ? card.DisplayName : $"{card.DisplayName} (not playable)");
+
+            if (clicked && playable)
             {
                 if (card.IsWild)
                 {
@@ -1347,6 +1645,9 @@ public class PlayerViewWindow
                         // Optimistic removal of the wild card
                         int ri = state.UltimaHand.FindIndex(c => c.Code.Equals(selCard.Code, StringComparison.OrdinalIgnoreCase));
                         if (ri >= 0) state.UltimaHand.RemoveAt(ri);
+                        // Optimistic color update
+                        UltimaColor[] colorMap = { UltimaColor.Water, UltimaColor.Fire, UltimaColor.Grass, UltimaColor.Light };
+                        state.UltimaActiveColor = colorMap[ci];
                         state.UltimaSelectedIdx = null;
                     }
                 }
@@ -1365,16 +1666,6 @@ public class PlayerViewWindow
             _plugin.SendGameMessage(pfx + ">DRAW");
         }
         ImGui.EndDisabled();
-
-        ImGui.SameLine();
-        bool ultimaReady = hand.Count == 1;
-        if (ultimaReady) ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.8f,0.15f,0.15f,1f));
-        if (ImGui.Button("ULTIMA!", new Vector2(75, 28)))
-        {
-            string pfx = _plugin.Engine.ChatMode == Models.ChatMode.Party ? "/party " : "/say ";
-            _plugin.SendGameMessage(pfx + ">ULTIMA");
-        }
-        if (ultimaReady) ImGui.PopStyleColor();
 
         ImGui.SameLine();
         if (ImGui.Button(">HAND", new Vector2(56, 28)))
@@ -1400,7 +1691,7 @@ public class PlayerViewWindow
         if (myTurn)
         {
             ImGui.SameLine(0, 16);
-            ImGui.TextColored(new Vector4(0.3f,1f,0.5f,1f), "\u25ba YOUR TURN \u2014 click a card to play it!");
+            ImGui.TextColored(new Vector4(0.3f,1f,0.5f,1f), "\u25ba YOUR TURN - click a card to play it!");
         }
     }
 

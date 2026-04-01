@@ -39,6 +39,7 @@ public class BlackjackEngine
 
     // Dealer message queue for delays
     private Queue<string> DealerMessageQueue { get; set; } = new();
+    public void ClearQueue() => DealerMessageQueue.Clear();
     private DateTime LastDealerMessage { get; set; } = DateTime.MinValue;
     private int GetDealerDelayMs() => CurrentTable.MessageDelayMs;
 

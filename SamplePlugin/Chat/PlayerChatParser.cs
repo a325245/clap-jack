@@ -10,6 +10,13 @@ public class PlayerChatParser
 {
     public PlayerViewState State { get; } = new();
 
+    private readonly Table _table;
+
+    public PlayerChatParser(Table table)
+    {
+        _table = table;
+    }
+
     private static readonly Random Rng = new();
 
     // ── Card extraction helpers ───────────────────────────────────────────────
@@ -86,6 +93,11 @@ public class PlayerChatParser
         ParseBaccarat(message);
         ParseChocobo(message);
         ParseUltima(message);
+
+        // ── Generic bank extraction from any game message ─────────────────
+        // Matches patterns like "Jess: ... Bank: 5000₩" or "(Bank: 5000₩)"
+        // The ₩ character is \uE049 in FFXIV.
+        ParseBankFromChat(message);
     }
 
     /// <summary>Call every frame to animate craps dice.</summary>
@@ -111,6 +123,49 @@ public class PlayerChatParser
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /// <summary>Extract bank values from chat. All engines output "Bank: N₩" consistently.
+    /// For roulette payouts the format is "Bank: OLD₩ → NEW₩" — we want the last number.</summary>
+    private void ParseBankFromChat(string msg)
+    {
+        // Find all "Name: ... Bank: N" patterns
+        var bankMatches = Regex.Matches(msg,
+            @"(?:^|[|,])\s*(.+?):\s.*?Bank:\s*(\d+)(?:.*?(?:\u2192|->)\s*(\d+))?",
+            RegexOptions.IgnoreCase);
+        foreach (Match bm in bankMatches)
+        {
+            string pName = bm.Groups[1].Value.Trim();
+            if (pName.StartsWith("Dealer", StringComparison.OrdinalIgnoreCase)) continue;
+            // Use the arrow-target number if present, otherwise the first number
+            string numStr = bm.Groups[3].Success ? bm.Groups[3].Value : bm.Groups[2].Value;
+            if (!int.TryParse(numStr, out int bank)) continue;
+
+            // Resolve display name (first name only) to full player name
+            string resolved = ResolvePlayerName(pName);
+            State.PlayerBanks[resolved] = bank;
+        }
+    }
+
+    /// <summary>
+    /// Resolve a possibly-abbreviated display name (e.g. "Jess") to the full
+    /// player name (e.g. "Jess Dee") by checking the engine's player table.
+    /// </summary>
+    private string ResolvePlayerName(string displayName)
+    {
+        // Exact match first
+        var players = _table.Players.Values;
+        var exact = players.FirstOrDefault(p =>
+            p.Name.Equals(displayName, StringComparison.OrdinalIgnoreCase));
+        if (exact != null) return exact.Name;
+
+        // First-name match (display names in FFXIV chat are often first name only)
+        var firstNameMatch = players.FirstOrDefault(p =>
+            p.Name.StartsWith(displayName + " ", StringComparison.OrdinalIgnoreCase) ||
+            p.Name.Split(' ')[0].Equals(displayName, StringComparison.OrdinalIgnoreCase));
+        if (firstNameMatch != null) return firstNameMatch.Name;
+
+        return displayName;
+    }
+
     private void SetDetectedGame(string game)
     {
         if (string.IsNullOrEmpty(State.DetectedGame) && !string.IsNullOrEmpty(game))
@@ -130,6 +185,7 @@ public class PlayerChatParser
             State.BJHoleRevealed  = false;
             State.BJPlayers       = new();
             State.BJDealerCards   = new();
+            State.BJCurrentPlayer = string.Empty;
             SetDetectedGame("Blackjack");
             return;
         }
@@ -139,6 +195,7 @@ public class PlayerChatParser
                 RegexOptions.IgnoreCase))
         {
             State.BJActive = false;
+            State.BJCurrentPlayer = string.Empty;
             return;
         }
 
@@ -194,6 +251,23 @@ public class PlayerChatParser
             return;
         }
 
+        // Player double down: "Jess doubles down: 【A♠】【K♥】【3♦】 -> Hard 14"
+        //                  or "Jess doubles! 【A♠】【K♥】【3♦】 (Hard 14)"
+        var dblM = Regex.Match(msg, @"^(.+?)\s+doubles?[\s!].*?((?:【[^】]+】)+)\s*(?:->|→|\()\s*(.+?)[\)]*$", RegexOptions.IgnoreCase);
+        if (dblM.Success)
+        {
+            UpdateBJPlayerHand(dblM.Groups[1].Value.Trim(), ExtractBJCards(msg), dblM.Groups[3].Value.Trim());
+            return;
+        }
+
+        // Player split hand: "Jess, hand 1: 【A♠】【K♥】 (20)"
+        var splitM = Regex.Match(msg, @"^(.+?),\s*hand\s*\d+:\s*((?:【[^】]+】)+)\s*\((.+?)\)", RegexOptions.IgnoreCase);
+        if (splitM.Success)
+        {
+            UpdateBJPlayerHand(splitM.Groups[1].Value.Trim(), ExtractBJCards(msg), splitM.Groups[3].Value.Trim());
+            return;
+        }
+
         // Player bust: "Jess BUSTS with 24!"
         var bustM = Regex.Match(msg, @"^(.+?)\s+(?:BUSTS?|goes over)\b.*?(\d+)", RegexOptions.IgnoreCase);
         if (bustM.Success)
@@ -224,6 +298,35 @@ public class PlayerChatParser
             int idx = State.BJPlayers.FindIndex(p =>
                 p.Name.Equals(pName, StringComparison.OrdinalIgnoreCase));
             if (idx >= 0) State.BJPlayers[idx].Desc = "21!";
+        }
+
+        // Turn announcement: "Jess, it's your turn. >HIT or >STAND" etc.
+        var turnM = Regex.Match(msg, @"^(.+?)(?:,\s*it.s your turn|.{1,3}your move)|Over to you,\s*(.+?)\.", RegexOptions.IgnoreCase);
+        if (turnM.Success)
+        {
+            string pName = (turnM.Groups[1].Success && turnM.Groups[1].Length > 0)
+                ? turnM.Groups[1].Value.Trim()
+                : turnM.Groups[2].Value.Trim();
+            State.BJCurrentPlayer = pName;
+
+            // Extract available commands: >HIT, >STAND, >DOUBLE, >SPLIT, >INSURANCE
+            State.BJAvailableCmds.Clear();
+            foreach (Match cm in Regex.Matches(msg, @">(\w+)"))
+                State.BJAvailableCmds.Add(cm.Groups[1].Value);
+        }
+
+        // Also parse "Jess: >HIT or >STAND" (fourth variant)
+        if (State.BJAvailableCmds.Count == 0 && msg.Contains(">"))
+        {
+            foreach (Match cm in Regex.Matches(msg, @">(\w+)"))
+                State.BJAvailableCmds.Add(cm.Groups[1].Value);
+        }
+
+        // Dealer's turn / round end clears current player
+        if (Regex.IsMatch(msg, @"Dealer.s turn|All players have finished", RegexOptions.IgnoreCase))
+        {
+            State.BJCurrentPlayer = string.Empty;
+            State.BJAvailableCmds.Clear();
         }
     }
 
@@ -370,6 +473,34 @@ public class PlayerChatParser
 
     // ── Poker ─────────────────────────────────────────────────────────────────
 
+    private void EnsurePokerPlayer(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return;
+        // Check for exact match or first-name match to avoid duplicates
+        if (State.PokerPlayers.Any(x =>
+            x.Name.Equals(name, StringComparison.OrdinalIgnoreCase) ||
+            x.Name.StartsWith(name + " ", StringComparison.OrdinalIgnoreCase) ||
+            x.Name.Split(' ')[0].Equals(name, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        // Also try resolving against the player table
+        string resolved = ResolvePlayerName(name);
+        if (!resolved.Equals(name, StringComparison.OrdinalIgnoreCase) &&
+            State.PokerPlayers.Any(x => x.Name.Equals(resolved, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        State.PokerPlayers.Add(new PVPokerPlayer { Name = resolved, Status = "Active" });
+    }
+
+    /// <summary>Find a poker player by exact or first-name match.</summary>
+    private PVPokerPlayer? FindPokerPlayer(string name)
+    {
+        return State.PokerPlayers.FirstOrDefault(x =>
+            x.Name.Equals(name, StringComparison.OrdinalIgnoreCase) ||
+            x.Name.StartsWith(name + " ", StringComparison.OrdinalIgnoreCase) ||
+            x.Name.Split(' ')[0].Equals(name, StringComparison.OrdinalIgnoreCase));
+    }
+
     private void ParsePoker(string msg)
     {
         if (msg.Contains("♠ New hand!"))
@@ -378,13 +509,70 @@ public class PlayerChatParser
             State.PokerShowdown   = new();
             State.PokerPhaseLabel = string.Empty;
             State.PokerPot        = 0;
+            State.PokerActionTo   = string.Empty;
+            foreach (var p in State.PokerPlayers) { p.Status = "Active"; p.Bet = 0; }
             SetDetectedGame("Poker");
+
+            var dhM = Regex.Match(msg, @"Dealer:\s*(.+?)\s{2,}SB:\s*(.+?)\s*\(", RegexOptions.IgnoreCase);
+            if (dhM.Success)
+            {
+                EnsurePokerPlayer(dhM.Groups[1].Value.Trim());
+                EnsurePokerPlayer(dhM.Groups[2].Value.Trim());
+            }
+            var bbM = Regex.Match(msg, @"BB:\s*(.+?)\s*\(", RegexOptions.IgnoreCase);
+            if (bbM.Success) EnsurePokerPlayer(bbM.Groups[1].Value.Trim());
             return;
         }
 
         var pm = Regex.Match(msg, @"Pot:\s*(\d+)");
         if (pm.Success && int.TryParse(pm.Groups[1].Value, out int pot))
             State.PokerPot = pot;
+
+        var foldM = Regex.Match(msg, @"^(.+?) folds\.", RegexOptions.IgnoreCase);
+        if (foldM.Success)
+        {
+            string pn = foldM.Groups[1].Value.Trim();
+            EnsurePokerPlayer(pn);
+            var pp = FindPokerPlayer(pn);
+            if (pp != null) pp.Status = "Folded";
+        }
+
+        var allInM = Regex.Match(msg, @"^(.+?) is ALL IN", RegexOptions.IgnoreCase);
+        if (allInM.Success)
+        {
+            string pn = allInM.Groups[1].Value.Trim();
+            EnsurePokerPlayer(pn);
+            var pp = FindPokerPlayer(pn);
+            if (pp != null) pp.Status = "AllIn";
+        }
+
+        var actM = Regex.Match(msg, @"Action to (.+?)\s*\(Bank:\s*(\d+)", RegexOptions.IgnoreCase);
+        if (actM.Success)
+        {
+            string pn = actM.Groups[1].Value.Trim();
+            EnsurePokerPlayer(pn);
+            State.PokerActionTo = pn;
+            State.PokerAvailCmds.Clear();
+            foreach (Match cm in Regex.Matches(msg, @">(\w+)"))
+                State.PokerAvailCmds.Add(cm.Groups[1].Value);
+            var pp = FindPokerPlayer(pn);
+            if (pp != null && int.TryParse(actM.Groups[2].Value, out int bank))
+                pp.Bank = bank;
+        }
+
+        var firstM = Regex.Match(msg, @"First to act:\s*(.+?)\s*\(Bank:\s*(\d+)", RegexOptions.IgnoreCase);
+        if (firstM.Success)
+        {
+            string pn = firstM.Groups[1].Value.Trim();
+            EnsurePokerPlayer(pn);
+            State.PokerActionTo = pn;
+            State.PokerAvailCmds.Clear();
+            foreach (Match cm in Regex.Matches(msg, @">(\w+)"))
+                State.PokerAvailCmds.Add(cm.Groups[1].Value);
+            var pp = FindPokerPlayer(pn);
+            if (pp != null && int.TryParse(firstM.Groups[2].Value, out int bank))
+                pp.Bank = bank;
+        }
 
         var flop  = Regex.Match(msg, @"\*\*\* FLOP \*\*\*\s*\[(.+?)\]");
         var turn  = Regex.Match(msg, @"\*\*\* TURN \*\*\*\s*\[(.+?)\]");
@@ -398,6 +586,7 @@ public class PlayerChatParser
         {
             State.PokerShowdown.Clear();
             State.PokerPhaseLabel = "Showdown";
+            State.PokerActionTo   = string.Empty;
             State.DetectedGame    = "Poker";
             var board = Regex.Match(msg, @"Board:\s*\[(.+?)\]");
             if (board.Success) SetCommunity(board.Groups[1].Value, "Showdown");
@@ -417,6 +606,18 @@ public class PlayerChatParser
                     Card2    = se.Groups[3].Value,
                     HandDesc = se.Groups[4].Value.Trim()
                 });
+        }
+
+        // Win message with bank: "Jess wins 400₩ with Pair! Bank: 5400₩"
+        var winBankM = Regex.Match(msg, @"^(.+?) wins \d+.*?Bank:\s*(\d+)", RegexOptions.IgnoreCase);
+        if (winBankM.Success)
+        {
+            string pn = winBankM.Groups[1].Value.Trim();
+            if (int.TryParse(winBankM.Groups[2].Value, out int bank))
+            {
+                var pp = FindPokerPlayer(pn);
+                if (pp != null) pp.Bank = bank;
+            }
         }
     }
 
@@ -528,11 +729,24 @@ public class PlayerChatParser
             return;
         }
 
+        // Race start with hash: "AND THEY'RE OFF! [Race:abc123...]"
+        var raceM = Regex.Match(msg, @"\[Race:([A-Za-z0-9]+)\]");
+        if (raceM.Success)
+        {
+            State.ChocoboRaceHash  = raceM.Groups[1].Value;
+            State.ChocoboRacing    = true;
+            State.ChocoboRaceStart = DateTime.Now;
+            State.ChocoboBettingOpen = false;
+            SetDetectedGame("Chocobo");
+            return;
+        }
+
         // Race finished: "FINISH! 1.CrimsonFlash  2.GoldenBolt  3...."
         if (Regex.IsMatch(msg, @"^FINISH!", RegexOptions.IgnoreCase) ||
             Regex.IsMatch(msg, @"wins the race|Race complete", RegexOptions.IgnoreCase))
         {
             State.ChocoboBettingOpen = false;
+            State.ChocoboRacing      = false;
             SetDetectedGame("Chocobo");
         }
     }
@@ -550,6 +764,14 @@ public class PlayerChatParser
             State.UltimaPlayerOrder.Add(pname);
         if (!State.UltimaCardCounts.ContainsKey(pname))
             State.UltimaCardCounts[pname] = cardCount ?? 7;
+    }
+
+    /// <summary>Returns true if the name is already in the known Ultima player list.
+    /// Used to prevent ghost players from being added by draw/forced-draw messages.</summary>
+    private bool IsKnownUltimaPlayer(string pname)
+    {
+        if (string.IsNullOrEmpty(pname)) return false;
+        return State.UltimaPlayerOrder.Contains(pname, StringComparer.OrdinalIgnoreCase);
     }
 
     private void ParseUltima(string msg)
@@ -608,19 +830,19 @@ public class PlayerChatParser
             return;
         }
 
-        // Color change: "Color changed to Water!"
-        var colorM = Regex.Match(msg, @"Color changed to (Water|Fire|Grass|Love)!", RegexOptions.IgnoreCase);
+        // Color change: "Color changed to Water!" / "Color changed to Light!"
+        var colorM = Regex.Match(msg, @"Color changed to (Water|Fire|Grass|Light)!", RegexOptions.IgnoreCase);
         if (colorM.Success)
         {
             State.UltimaActiveColor = UltimaCard.ParseColor(colorM.Groups[1].Value) ?? UltimaColor.Wild;
             return;
         }
 
-        // Direction reversal
-        if (Regex.IsMatch(msg, @"now clockwise", RegexOptions.IgnoreCase))
-        { State.UltimaClockwise = true; return; }
+        // Direction reversal: "...now clockwise" / "...now counter-clockwise"
         if (Regex.IsMatch(msg, @"now counter-clockwise", RegexOptions.IgnoreCase))
-        { State.UltimaClockwise = false; return; }
+        { State.UltimaClockwise = false; SetDetectedGame("Ultima"); return; }
+        if (Regex.IsMatch(msg, @"now clockwise", RegexOptions.IgnoreCase))
+        { State.UltimaClockwise = true; SetDetectedGame("Ultima"); return; }
 
         // Combined draw-until-play: "X drew N cards until they could play — [Y] ..."
         //                     or:  "X drew a card and plays [Y] ..."
@@ -632,7 +854,12 @@ public class PlayerChatParser
             string pname = drawPlayM.Groups[1].Value.Trim();
             EnsureUltimaPlayer(pname);
             var card = UltimaCard.Parse(drawPlayM.Groups[2].Value);
-            if (card != null) State.UltimaTopCard = card;
+            if (card != null)
+            {
+                State.UltimaTopCard = card;
+                if (!card.IsWild)
+                    State.UltimaActiveColor = card.Color;
+            }
             if (absCardCount.HasValue)
                 State.UltimaCardCounts[pname] = absCardCount.Value;
             else
@@ -653,7 +880,12 @@ public class PlayerChatParser
             string pname = playM.Groups[1].Value.Trim();
             EnsureUltimaPlayer(pname);
             var    card  = UltimaCard.Parse(playM.Groups[2].Value);
-            if (card != null) State.UltimaTopCard = card;
+            if (card != null)
+            {
+                State.UltimaTopCard = card;
+                if (!card.IsWild)
+                    State.UltimaActiveColor = card.Color;
+            }
             if (absCardCount.HasValue)
                 State.UltimaCardCounts[pname] = absCardCount.Value;
             else if (State.UltimaCardCounts.ContainsKey(pname))
@@ -663,11 +895,15 @@ public class PlayerChatParser
         }
 
         // Player draws one card
+        // Single draw: "{name} draws a card" but NOT "X ran out of time and draws..."
         var drawM = Regex.Match(msg, @"^(.+?) draws a card", RegexOptions.IgnoreCase);
         if (drawM.Success)
         {
             string pname = drawM.Groups[1].Value.Trim();
-            EnsureUltimaPlayer(pname);
+            // Strip timeout prefix: "X ran out of time and" → "X"
+            var toM = Regex.Match(pname, @"^(.+?)\s+ran out of time and$", RegexOptions.IgnoreCase);
+            if (toM.Success) pname = toM.Groups[1].Value.Trim();
+            if (!IsKnownUltimaPlayer(pname)) return; // don't add ghost players
             if (absCardCount.HasValue)
                 State.UltimaCardCounts[pname] = absCardCount.Value;
             else if (State.UltimaCardCounts.ContainsKey(pname))
@@ -676,12 +912,16 @@ public class PlayerChatParser
             return;
         }
 
-        // Forced draws (Summon+2 / PolymorphSummon+4): "{name} draws N cards"
-        var forcedM = Regex.Match(msg, @"^(.+?) draws (\d+) cards?", RegexOptions.IgnoreCase);
+        // Forced draws (Summon+2 / PolymorphSummon+4): "Summon+2! {name} draws N cards"
+        //                                           or "{name} draws N cards and is skipped!"
+        var forcedM = Regex.Match(msg, @"(?:^|!\s*)(.+?) draws (\d+) cards?", RegexOptions.IgnoreCase);
         if (forcedM.Success && int.TryParse(forcedM.Groups[2].Value, out int dc))
         {
             string pname = forcedM.Groups[1].Value.Trim();
-            EnsureUltimaPlayer(pname);
+            // Strip any prefix up to "! " (e.g. "Summon+2! Jess" → "Jess")
+            int bangIdx = pname.LastIndexOf("! ", StringComparison.Ordinal);
+            if (bangIdx >= 0) pname = pname[(bangIdx + 2)..].Trim();
+            if (!IsKnownUltimaPlayer(pname)) return; // don't add ghost players
             if (absCardCount.HasValue)
                 State.UltimaCardCounts[pname] = absCardCount.Value;
             else if (State.UltimaCardCounts.ContainsKey(pname))
@@ -730,6 +970,26 @@ public class PlayerChatParser
             };
             if (!string.IsNullOrEmpty(detected))
                 SetDetectedGame(detected);
+
+            // Parse player list banks: "Players: Jess(5000), Bob(3000)"
+            var playersM = Regex.Match(msg, @"Players:\s*(.+)$", RegexOptions.IgnoreCase);
+            if (playersM.Success)
+            {
+                var playerEntries = Regex.Matches(playersM.Groups[1].Value, @"([^,(]+)\((\d+)\)");
+                foreach (Match pe in playerEntries)
+                {
+                    string pn = pe.Groups[1].Value.Trim();
+                    if (int.TryParse(pe.Groups[2].Value, out int bank))
+                        State.PlayerBanks[pn] = bank;
+                    if (detected == "Poker")
+                    {
+                        EnsurePokerPlayer(pn);
+                        var pp = FindPokerPlayer(pn);
+                        if (pp != null) pp.Bank = bank;
+                    }
+                }
+            }
+
             State.AddFeed($"[Sync] {msg}");
             return;
         }

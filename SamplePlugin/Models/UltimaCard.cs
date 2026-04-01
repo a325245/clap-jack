@@ -8,7 +8,7 @@ namespace SamplePlugin.Models;
 // ── Enumerations ──────────────────────────────────────────────────────────────
 
 /// <summary>The four elemental suits of Ultima!, plus Wild for Polymorph cards.</summary>
-public enum UltimaColor { Water, Fire, Grass, Love, Wild }
+public enum UltimaColor { Water, Fire, Grass, Light, Wild }
 
 /// <summary>All Ultima! card types. Numbers are 0-9; values ≥10 are action/wild cards.</summary>
 public enum UltimaCardType
@@ -43,7 +43,7 @@ public class UltimaCard
                 UltimaColor.Water => "W",
                 UltimaColor.Fire  => "F",
                 UltimaColor.Grass => "G",
-                UltimaColor.Love  => "L",
+                UltimaColor.Light => "L",
                 _                 => ""
             };
             string t = Type switch
@@ -79,7 +79,7 @@ public class UltimaCard
                 UltimaColor.Water => "Water",
                 UltimaColor.Fire  => "Fire",
                 UltimaColor.Grass => "Grass",
-                UltimaColor.Love  => "Light",
+                UltimaColor.Light => "Light",
                 _                 => ""
             };
             string typeName = Type switch
@@ -98,8 +98,8 @@ public class UltimaCard
     // ── Symbol shown on card face in UI ───────────────────────────────────────
     public string Symbol => Type switch
     {
-        UltimaCardType.Counterspell   => "\u2298", // ⊘
-        UltimaCardType.Rewind         => "\u21BA", // ↺
+        UltimaCardType.Counterspell   => "", // ⊘
+        UltimaCardType.Rewind         => "  ", // ↺
         UltimaCardType.Summon         => "+2",
         UltimaCardType.Polymorph      => "\u2605", // ★
         UltimaCardType.PolymorphSummon=> "\u2605+4",
@@ -112,20 +112,20 @@ public class UltimaCard
         UltimaColor.Water => new Vector4(0.14f, 0.38f, 0.82f, 1f),
         UltimaColor.Fire  => new Vector4(0.82f, 0.14f, 0.14f, 1f),
         UltimaColor.Grass => new Vector4(0.12f, 0.64f, 0.22f, 1f),
-        UltimaColor.Love  => new Vector4(0.84f, 0.76f, 0.08f, 1f),
+        UltimaColor.Light => new Vector4(0.84f, 0.76f, 0.08f, 1f),
         _                 => new Vector4(0.22f, 0.16f, 0.32f, 1f)   // wild = dark purple
     };
 
-    /// <summary>Text color on a card of this color (black on Love, white on others).</summary>
+    /// <summary>Text color on a card of this color (black on Light, white on others).</summary>
     public static Vector4 TextColor(UltimaColor c) =>
-        c == UltimaColor.Love ? new Vector4(0f, 0f, 0f, 1f) : new Vector4(1f, 1f, 1f, 1f);
+        c == UltimaColor.Light ? new Vector4(0f, 0f, 0f, 1f) : new Vector4(1f, 1f, 1f, 1f);
 
     public static string ColorDisplayName(UltimaColor c) => c switch
     {
         UltimaColor.Water => "Water",
         UltimaColor.Fire  => "Fire",
         UltimaColor.Grass => "Grass",
-        UltimaColor.Love  => "Light",
+        UltimaColor.Light => "Light",
         _                 => "Wild"
     };
 
@@ -134,7 +134,7 @@ public class UltimaCard
     public static List<UltimaCard> CreateDeck()
     {
         var deck = new List<UltimaCard>(108);
-        foreach (var color in new[] { UltimaColor.Water, UltimaColor.Fire, UltimaColor.Grass, UltimaColor.Love })
+        foreach (var color in new[] { UltimaColor.Water, UltimaColor.Fire, UltimaColor.Grass, UltimaColor.Light })
         {
             deck.Add(new UltimaCard { Color = color, Type = UltimaCardType.N0 });
             for (int n = 1; n <= 9; n++)
@@ -181,7 +181,7 @@ public class UltimaCard
             'W' => UltimaColor.Water,
             'F' => UltimaColor.Fire,
             'G' => UltimaColor.Grass,
-            'L' => UltimaColor.Love,
+            'L' => UltimaColor.Light,
             _   => (UltimaColor)99
         };
         if ((int)color == 99) return null;
@@ -204,7 +204,7 @@ public class UltimaCard
             "WATER" or "W" or "BLUE"   => UltimaColor.Water,
             "FIRE"  or "F" or "RED"    => UltimaColor.Fire,
             "GRASS" or "G" or "GREEN"  => UltimaColor.Grass,
-            "LOVE"  or "LIGHT" or "L" or "YELLOW" => UltimaColor.Love,
+            "LIGHT" or "L" or "YELLOW" => UltimaColor.Light,
             _                          => null
         };
     }

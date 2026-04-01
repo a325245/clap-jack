@@ -77,6 +77,8 @@ namespace SamplePlugin
         }
 
         private bool _showPokerHoleCards = true;
+        private bool _showResetConfirm  = false;
+        private bool _resetModalOpen    = true;
         private int  _viewMode = 0; // 0=Dealer  1=Player View
 
         public PluginUI(Plugin plugin, BlackjackEngine engine)
@@ -105,6 +107,43 @@ namespace SamplePlugin
             if (ImGui.Begin("Blackjack Dealer - Professional Control Panel", ref isVisible, ImGuiWindowFlags.None))
             {
                 IsVisible = isVisible;
+
+                // ── Reset button — top right corner (dealer view only) ───────
+                if (_viewMode != 1)
+                {
+                    float btnW = 60f;
+                    ImGui.SameLine(ImGui.GetWindowWidth() - btnW - 12f);
+                    ImGui.PushStyleColor(ImGuiCol.Button,        new Vector4(0.55f, 0.08f, 0.08f, 1f));
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.75f, 0.15f, 0.15f, 1f));
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive,  new Vector4(0.90f, 0.20f, 0.20f, 1f));
+                    if (ImGui.Button("RESET", new Vector2(btnW, 0)))
+                        _showResetConfirm = true;
+                    ImGui.PopStyleColor(3);
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip("Reset the entire plugin to factory state");
+                }
+
+                // Reset confirmation popup
+                if (_showResetConfirm)
+                {
+                    ImGui.OpenPopup("##resetConfirm");
+                    _showResetConfirm = false;
+                }
+                if (ImGui.BeginPopupModal("##resetConfirm", ref _resetModalOpen, ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar))
+                {
+                    ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "Are you sure?");
+                    ImGui.Text("This will clear ALL players, banks, bets, cards,\nand game state. This cannot be undone.");
+                    ImGui.Spacing();
+                    if (ImGui.Button("Yes, Reset Everything", new Vector2(180, 26)))
+                    {
+                        plugin.FullReset();
+                        ImGui.CloseCurrentPopup();
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.Button("Cancel", new Vector2(80, 26)))
+                        ImGui.CloseCurrentPopup();
+                    ImGui.EndPopup();
+                }
 
                 if (ImGui.BeginTabBar("##maintabs"))
                 {
@@ -147,9 +186,39 @@ namespace SamplePlugin
 
         private void DrawTableTab()
         {
-            ImGui.TextColored(new Vector4(1, 0.84f, 0, 1), "BLACKJACK TABLE");
+            // View mode selector — always visible
+            ImGui.Text("View:");
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(110);
+            string[] viewModes = { "Dealer", "Player View" };
+            ImGui.Combo("##viewmode", ref _viewMode, viewModes, viewModes.Length);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Switch between the dealer control panel and the player-side view");
 
-            ImGui.Separator();
+            // ── Player View mode — render player view and return ──────────────
+            {
+                string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+                var pvState = plugin.ChatParser.State;
+                if (pvState.ShouldAutoSwitch)
+                {
+                    pvState.ShouldAutoSwitch = false;
+                    bool dealerIsOther = !string.IsNullOrEmpty(pvState.DealerName) &&
+                        !pvState.DealerName.Equals(myName, StringComparison.OrdinalIgnoreCase);
+                    if (_viewMode == 0 && dealerIsOther)
+                        _viewMode = 1;
+                }
+            }
+
+            if (_viewMode == 1)
+            {
+                ImGui.Separator();
+                string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+                plugin.PlayerView.DrawContent(myName);
+                return;
+            }
+
+            // ── Dealer controls — only in dealer view ─────────────────────────
+            ImGui.SameLine();
 
             // Game type selector
             ImGui.Text("Game:");
@@ -162,8 +231,66 @@ namespace SamplePlugin
                 var newType = (Models.GameType)gameType;
                 if (newType != engine.CurrentTable.GameType)
                 {
+                    // ── Cease all active games, refund bets, stop timers ─────────
+                    var tbl = engine.CurrentTable;
+
+                    // Roulette: refund and reset spin
+                    if (tbl.RouletteSpinState != Models.RouletteSpinState.Idle)
+                        plugin.RouletteEngine.ForceStop();
+                    foreach (var p in tbl.Players.Values)
+                    {
+                        int rouRefund = p.RouletteBets.Sum(b => b.Amount);
+                        if (rouRefund > 0) p.Bank += rouRefund;
+                        p.RouletteBets.Clear();
+                    }
+
+                    // Craps: refund
+                    plugin.CrapsEngine.ForceStop();
+
+                    // Baccarat: refund
+                    foreach (var kvp in tbl.BaccaratBets.ToList())
+                    {
+                        var bet = kvp.Value;
+                        var bp = tbl.Players.Values.FirstOrDefault(x =>
+                            x.Name.Equals(kvp.Key, StringComparison.OrdinalIgnoreCase));
+                        if (bp != null) bp.Bank += bet.PlayerBet + bet.BankerBet + bet.TieBet;
+                    }
+                    tbl.BaccaratBets.Clear();
+                    tbl.BaccaratPhase = Models.BaccaratPhase.WaitingForBets;
+
+                    // Chocobo: refund
+                    foreach (var kvp in tbl.ChocoboBets.ToList())
+                    {
+                        var bp = tbl.Players.Values.FirstOrDefault(x =>
+                            x.Name.ToUpperInvariant() == kvp.Key);
+                        if (bp != null) bp.Bank += kvp.Value.Amount;
+                    }
+                    tbl.ChocoboBets.Clear();
+                    tbl.ChocoboRacePhase = Models.ChocoboRacePhase.Idle;
+
+                    // Poker: cancel hand
+                    plugin.PokerEngine.ForceStop();
+
+                    // Ultima: cancel silently (ForceEnd sends a chat message)
+                    tbl.UltimaPhase = Models.UltimaPhase.WaitingForPlayers;
+
+                    // Blackjack: reset turn state
+                    tbl.TurnTimeRemaining = tbl.TurnTimeLimit;
+
+                    // Silence all queued messages from the force stops
+                    plugin.RouletteEngine.ClearQueue();
+                    plugin.CrapsEngine.ClearQueue();
+                    plugin.BaccaratEngine.ClearQueue();
+                    plugin.ChocoboEngine.ClearQueue();
+                    plugin.PokerEngine.ClearQueue();
+                    engine.ClearQueue();
+
+                    // Reset common state
+                    tbl.GameState = Models.GameState.Lobby;
+                    tbl.TurnOrder.Clear();
+                    tbl.CurrentTurnIndex = 0;
+
                     engine.CurrentTable.GameType = newType;
-                    engine.CurrentTable.GameState = Models.GameState.Lobby;
                     if (newType == Models.GameType.None)
                     {
                         engine.Announce("Plugin set to idle — commands are now disabled.");
@@ -213,39 +340,7 @@ namespace SamplePlugin
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Show player action confirmations in chat (hits, doubles, splits)");
 
-            // View mode selector
-            ImGui.SameLine();
-            ImGui.Spacing(); ImGui.SameLine();
-            ImGui.Text("View:");
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(110);
-            string[] viewModes = { "Dealer", "Player View" };
-            ImGui.Combo("##viewmode", ref _viewMode, viewModes, viewModes.Length);
-            if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Switch between the dealer control panel and the player-side view");
-
             ImGui.Separator();
-
-            // Auto-switch to player view when a game is detected from someone else
-            {
-                string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
-                var pvState = plugin.ChatParser.State;
-                if (pvState.ShouldAutoSwitch)
-                {
-                    pvState.ShouldAutoSwitch = false;
-                    bool dealerIsOther = !string.IsNullOrEmpty(pvState.DealerName) &&
-                        !pvState.DealerName.Equals(myName, StringComparison.OrdinalIgnoreCase);
-                    if (_viewMode == 0 && dealerIsOther)
-                        _viewMode = 1;
-                }
-            }
-
-            if (_viewMode == 1)
-            {
-                string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
-                plugin.PlayerView.DrawContent(myName);
-                return;
-            }
 
             if (engine.CurrentTable.GameType == Models.GameType.None)
                 DrawNoneInterface();
@@ -601,8 +696,31 @@ namespace SamplePlugin
                 }
             }
 
-            // Advance cursor past the grid
-            ImGui.SetCursorScreenPos(new Vector2(startPos.X, startPos.Y + zeroH + 8));
+            // ── Outside bets row: RED / BLACK / EVEN / ODD ────────────────────
+            float outsideY = startPos.Y + 3 * (cellH + pad);
+            float totalW   = cellW + pad + 12 * (cellW + pad);
+            float obW      = totalW * 0.25f - pad;
+            string[] outsideNames = { "RED", "BLACK", "EVEN", "ODD" };
+            uint[]   outsideBg    = { 0xFF2233CCu, 0xFF111111u, 0xFF222222u, 0xFF222222u };
+
+            for (int oi = 0; oi < 4; oi++)
+            {
+                float ox = startPos.X + cellW + pad + oi * (obW + pad);
+                bool  ob = betMap.ContainsKey(outsideNames[oi]);
+                drawList.AddRectFilled(new Vector2(ox, outsideY), new Vector2(ox+obW, outsideY+cellH), outsideBg[oi], 2f);
+                drawList.AddRect(new Vector2(ox, outsideY), new Vector2(ox+obW, outsideY+cellH), 0xFF555555u, 2f);
+                var oSz = ImGui.CalcTextSize(outsideNames[oi]);
+                drawList.AddText(new Vector2(ox + obW*0.5f - oSz.X*0.5f, outsideY + cellH*0.5f - oSz.Y*0.5f),
+                    0xFFFFFFFFu, outsideNames[oi]);
+                if (ob)
+                    drawList.AddCircleFilled(new Vector2(ox + obW*0.5f, outsideY + cellH*0.5f), 6f, 0xCCFFCC22u, 12);
+                if (mouse.X >= ox && mouse.X < ox+obW && mouse.Y >= outsideY && mouse.Y < outsideY+cellH
+                    && betMap.TryGetValue(outsideNames[oi], out var obp))
+                { ttTitle = outsideNames[oi]; ttBody = string.Join("\n", obp); }
+            }
+
+            // Advance cursor past the grid + outside row
+            ImGui.SetCursorScreenPos(new Vector2(startPos.X, outsideY + cellH + 8));
 
             if (ttTitle != null)
             {
@@ -1715,7 +1833,7 @@ namespace SamplePlugin
                                 ImGui.TextColored(new Vector4(1f, 0.5f, 0.5f, 1f), $"L:{player.UltimaLosses}");
                             }
                             else
-                                ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "\u2014");
+                                ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "-");
                             break;
                         }
                         default:
@@ -1962,7 +2080,7 @@ namespace SamplePlugin
                     ImGui.TextColored(new Vector4(0.5f, 1f, 1f, 1f), "YOUR HAND");
                     ImGui.SameLine(120);
                     if (myTurn)
-                        ImGui.TextColored(new Vector4(0.3f, 1f, 0.5f, 1f), "\u25ba YOUR TURN \u2014 click to play");
+                        ImGui.TextColored(new Vector4(0.3f, 1f, 0.5f, 1f), "\u25ba YOUR TURN - click to play");
                     ImGui.Spacing();
 
                     DrawUltimaHandDealer(dealerHand, ultima, AdminName, myTurn);

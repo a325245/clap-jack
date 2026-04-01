@@ -61,6 +61,7 @@ public class PokerEngine
 
     private void QueueMessage(string msg)               => _msgQueue.Enqueue((false, string.Empty, msg));
     private void QueueTell(string target, string msg)    => _msgQueue.Enqueue((true, target, msg));
+    public void ClearQueue() => _msgQueue.Clear();
 
     private void SendMessage(string msg)
     {
@@ -132,22 +133,23 @@ public class PokerEngine
         // Seat all non-standing, non-AFK, solvent players (up to MaxSeats)
         int seated = 0;
         int minToPlay = CurrentTable.PokerSmallBlind * 2 + CurrentTable.PokerAnte;
+        var seatedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var player in CurrentTable.Players.Values)
         {
             if (seated >= MaxSeats) break;
+            if (player.IsKicked || player.IsAfk) continue;
+            if (seatedNames.Contains(player.Name)) continue; // prevent duplicates
             if (player.Bank < minToPlay)
             {
-                if (!player.IsAfk)
-                {
-                    player.IsAfk = true;
-                    QueueMessage($"{DN(player.Name)} cannot afford the ante ({minToPlay}\uE049) and is set to AFK.");
-                    Log($"{player.Name} forced AFK \u2014 insufficient funds ({player.Bank}\uE049)");
-                }
+                player.IsAfk = true;
+                QueueMessage($"{DN(player.Name)} cannot afford the ante ({minToPlay}\uE049) and is set to AFK.");
+                Log($"{player.Name} forced AFK - insufficient funds ({player.Bank}\uE049)");
                 continue;
             }
             Seats[seated].Clear();
             Seats[seated].PlayerName = player.Name;
             Seats[seated].Status = PokerPlayerStatus.Active;
+            seatedNames.Add(player.Name);
             seated++;
         }
         for (int i = seated; i < MaxSeats; i++) Seats[i].Clear();
@@ -240,7 +242,7 @@ public class PokerEngine
         string utgOpts  = utgOwed > 0
             ? $">CALL ({utgOwed}\uE049)  >RAISE [+amt]  >FOLD"
             : ">CHECK  >RAISE [+amt]  >FOLD";
-        QueueMessage($"Pot: {CurrentTable.PokerPot}\uE049 | First to act: {DN(Seats[utgSeat].PlayerName)} (Bank: {GetPlayer(Seats[utgSeat].PlayerName)?.Bank ?? 0}\uE049) \u2014 {utgOpts}");
+        QueueMessage($"Pot: {CurrentTable.PokerPot}\uE049 | First to act: {DN(Seats[utgSeat].PlayerName)} (Bank: {GetPlayer(Seats[utgSeat].PlayerName)?.Bank ?? 0}\uE049) - {utgOpts}");
 
         CurrentTable.PokerPhase       = PokerPhase.PreFlop;
         CurrentTable.PokerCurrentSeat = utgSeat;
@@ -304,7 +306,7 @@ public class PokerEngine
 
         int owed = CurrentTable.PokerStreetBet - Seats[seatIndex].Bet;
         if (owed > 0)
-        { error = $"Cannot check \u2014 there is a {CurrentTable.PokerStreetBet}\uE049 bet. Use >CALL or >RAISE."; return false; }
+        { error = $"Cannot check - there is a {CurrentTable.PokerStreetBet}\uE049 bet. Use >CALL or >RAISE."; return false; }
 
         Seats[seatIndex].HasActed = true;
         QueueMessage($"{DN(playerName)} checks.");
@@ -322,7 +324,7 @@ public class PokerEngine
         if (player == null) { error = "Player not found."; return false; }
 
         int owed = CurrentTable.PokerStreetBet - Seats[seatIndex].Bet;
-        if (owed <= 0) { error = "Nothing to call \u2014 use >CHECK."; return false; }
+        if (owed <= 0) { error = "Nothing to call - use >CHECK."; return false; }
 
         int actual                 = Math.Min(owed, player.Bank);
         player.Bank               -= actual;
@@ -430,7 +432,7 @@ public class PokerEngine
 
         if (seatIndex < 0)                          { error = "You are not seated at this table."; return false; }
         if (seatIndex != CurrentTable.PokerCurrentSeat) { error = "It is not your turn."; return false; }
-        if (!Seats[seatIndex].IsActive)             { error = "You cannot act \u2014 you are folded or all-in."; return false; }
+        if (!Seats[seatIndex].IsActive)             { error = "You cannot act - you are folded or all-in."; return false; }
 
         return true;
     }
@@ -474,7 +476,7 @@ public class PokerEngine
             string opts  = owed > 0
                 ? $">CALL ({owed}\uE049)  >RAISE [+amt]  >FOLD"
                 : ">CHECK  >RAISE [+amt]  >FOLD";
-            QueueMessage($"Action to {DN(name)} (Bank: {player?.Bank ?? 0}\uE049) \u2014 {opts}");
+            QueueMessage($"Action to {DN(name)} (Bank: {player?.Bank ?? 0}\uE049) - {opts}");
             OnUIUpdate?.Invoke();
             return;
         }
@@ -575,7 +577,7 @@ public class PokerEngine
                 .Concat(CurrentTable.PokerCommunity)
                 .ToArray();
             var hr = BestHandFromCards(all);
-            QueueMessage($"{DN(Seats[i].PlayerName)}: {Seats[i].HoleCard1.GetCardDisplay()} {Seats[i].HoleCard2.GetCardDisplay()} \u2014 {hr.Description}");
+            QueueMessage($"{DN(Seats[i].PlayerName)}: {Seats[i].HoleCard1.GetCardDisplay()} {Seats[i].HoleCard2.GetCardDisplay()} - {hr.Description}");
         }
 
         AwardPots();
@@ -593,7 +595,7 @@ public class PokerEngine
             if (player != null)
             {
                 player.Bank               += CurrentTable.PokerPot;
-                QueueMessage($"{DN(Seats[winnerSeat].PlayerName)} wins {CurrentTable.PokerPot}\uE049 (uncontested).");
+                QueueMessage($"{DN(Seats[winnerSeat].PlayerName)} wins {CurrentTable.PokerPot}\uE049 (uncontested). Bank: {player.Bank}\uE049");
                 Log($"{Seats[winnerSeat].PlayerName} wins uncontested {CurrentTable.PokerPot}\uE049");
             }
         }
@@ -660,7 +662,7 @@ public class PokerEngine
                 if (wp == null) continue;
                 wp.Bank += share;
                 var desc = ranked.First(x => x.seat == w).hand.Description;
-                QueueMessage($"{DN(Seats[w].PlayerName)} wins {share}\uE049 with {desc}!");
+                QueueMessage($"{DN(Seats[w].PlayerName)} wins {share}\uE049 with {desc}! Bank: {wp.Bank}\uE049");
                 Log($"{Seats[w].PlayerName} wins {share}\uE049");
             }
 
@@ -791,7 +793,7 @@ public class PokerEngine
         }
 
         QueueMessage("Poker hand force stopped by dealer. All bets refunded.");
-        Log("Hand force stopped \u2014 refunding all bets");
+        Log("Hand force stopped - refunding all bets");
 
         for (int i = 0; i < MaxSeats; i++) Seats[i].Clear();
         CurrentTable.PokerCommunity.Clear();

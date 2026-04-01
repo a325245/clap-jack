@@ -26,6 +26,14 @@ public class PVPokerShowdown
     public string HandDesc { get; set; } = string.Empty;
 }
 
+public class PVPokerPlayer
+{
+    public string Name   { get; set; } = string.Empty;
+    public int    Bank   { get; set; }
+    public string Status { get; set; } = string.Empty; // "Active","Folded","AllIn","AFK"
+    public int    Bet    { get; set; }
+}
+
 public class PVChocoboRacer
 {
     public int    Number { get; set; }
@@ -39,11 +47,16 @@ public class PlayerViewState
     public string DealerName   { get; set; } = string.Empty;
     public string DetectedGame { get; set; } = string.Empty;
 
+    /// <summary>Bank values parsed from chat messages. Key = player name (case-preserved).</summary>
+    public Dictionary<string, int> PlayerBanks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     // ── Blackjack ─────────────────────────────────────────────────────────────
     public bool           BJActive       { get; set; }
     public List<string>   BJDealerCards  { get; set; } = new();
     public bool           BJHoleRevealed { get; set; }
     public List<PVBJHand> BJPlayers      { get; set; } = new();
+    public string         BJCurrentPlayer { get; set; } = string.Empty;
+    public HashSet<string> BJAvailableCmds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     // ── Craps ─────────────────────────────────────────────────────────────────
     public bool     CrapsDiceRolling { get; set; }
@@ -69,6 +82,9 @@ public class PlayerViewState
     public string                MyHoleCard2     { get; set; } = string.Empty;
     public bool                  MyHoleReceived  { get; set; }
     public List<PVPokerShowdown> PokerShowdown   { get; set; } = new();
+    public List<PVPokerPlayer>   PokerPlayers    { get; set; } = new();
+    public string                PokerActionTo   { get; set; } = string.Empty;
+    public HashSet<string>       PokerAvailCmds  { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     // ── Feed ─────────────────────────────────────────────────────────────────
     public List<string> Feed { get; } = new();
@@ -91,9 +107,12 @@ public class PlayerViewState
     public bool   BacActive        { get; set; }
 
     // ── Chocobo player view ───────────────────────────────────────────────────
-    public List<PVChocoboRacer>  ChocoboRacers     { get; set; } = new();
-    public int                   PVChocoboRacerPick { get; set; } = 0;
-    public bool                  ChocoboBettingOpen { get; set; }
+    public List<PVChocoboRacer>  ChocoboRacers      { get; set; } = new();
+    public int                   PVChocoboRacerPick  { get; set; } = 0;
+    public bool                  ChocoboBettingOpen  { get; set; }
+    public string                ChocoboRaceHash     { get; set; } = string.Empty;
+    public bool                  ChocoboRacing       { get; set; }
+    public DateTime              ChocoboRaceStart    { get; set; }
 
     // ── Auto-switch ───────────────────────────────────────────────────────────
     /// <summary>Set when DetectedGame is first populated; PluginUI polls and resets it.</summary>
@@ -133,6 +152,7 @@ public class PlayerViewState
         MyHoleCard1 = MyHoleCard2 = string.Empty;
         MyHoleReceived = false;
         PokerShowdown.Clear();
+        PokerPlayers.Clear();
         PokerPhaseLabel = string.Empty;
         PokerPot = 0;
     }

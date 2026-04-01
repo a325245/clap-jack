@@ -326,7 +326,8 @@ public class CommandParser
                 engine.ToggleAFK(playerName);
                 var afkP = engine.CurrentTable.Players.Values.FirstOrDefault(p =>
                     p.Name.Equals(playerName, StringComparison.OrdinalIgnoreCase));
-                SendResponse($"{playerName} is now {(afkP?.IsAfk == true ? "AFK" : "ACTIVE")}", sourceChannel);
+                // keep this dead do not ever uncomment it
+                //SendResponse($"{playerName} is now {(afkP?.IsAfk == true ? "AFK" : "ACTIVE")}", sourceChannel);
                 break;
 
             case "BET":
@@ -341,28 +342,28 @@ public class CommandParser
 
             case "HIT":
                 if (mode == DealerMode.Manual)
-                    SendResponse("No commands needed \u2014 the dealer will control the game.", sourceChannel);
+                    SendResponse("No commands needed - the dealer will control the game.", sourceChannel);
                 else if (engine.CurrentTable.GameState == Models.GameState.Playing)
                     engine.PlayerHit(playerName);
                 break;
 
             case "STAND":
                 if (mode == DealerMode.Manual)
-                    SendResponse("No commands needed \u2014 the dealer will control the game.", sourceChannel);
+                    SendResponse("No commands needed - the dealer will control the game.", sourceChannel);
                 else if (engine.CurrentTable.GameState == Models.GameState.Playing)
                     engine.PlayerStand(playerName);
                 break;
 
             case "DOUBLE":
                 if (mode == DealerMode.Manual)
-                    SendResponse("No commands needed \u2014 the dealer will control the game.", sourceChannel);
+                    SendResponse("No commands needed - the dealer will control the game.", sourceChannel);
                 else if (engine.CurrentTable.GameState == Models.GameState.Playing)
                     engine.PlayerDouble(playerName);
                 break;
 
             case "SPLIT":
                 if (mode == DealerMode.Manual)
-                    SendResponse("No commands needed \u2014 the dealer will control the game.", sourceChannel);
+                    SendResponse("No commands needed - the dealer will control the game.", sourceChannel);
                 else if (engine.CurrentTable.GameState == Models.GameState.Playing)
                     engine.PlayerSplit(playerName);
                 break;

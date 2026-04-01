@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using SamplePlugin.Models;
 
 namespace SamplePlugin.Engine;
@@ -59,6 +60,7 @@ public class ChocoboEngine
     private readonly float[,] _segmentCumProgress = new float[8, TotalSegments];
     private int   _lastAnnouncedSegment = -1;
     public  int   WinnerIndex           { get; private set; } = -1;
+    public  string LastRaceHash          { get; private set; } = string.Empty;
 
     private const double RaceDurationMs = 30_000;
     private const int    TotalSegments  = 6;          // one every 5 s
@@ -98,6 +100,7 @@ public class ChocoboEngine
     }
 
     private void QueueMessage(string msg) => MessageQueue.Enqueue(msg);
+    public void ClearQueue() => MessageQueue.Clear();
 
     public void ProcessMessageQueue()
     {
@@ -197,6 +200,10 @@ public class ChocoboEngine
         _lastAnnouncedSegment = -1;
         WinnerIndex = -1;
 
+        // Generate an obfuscated race hash: encodes 1st/2nd/3rd + segment data
+        // so the player view can reconstruct the race animation.
+        LastRaceHash = GenerateRaceHash();
+
         CurrentTable.ChocoboRacePhase = ChocoboRacePhase.Racing;
         CurrentTable.GameState = Models.GameState.Playing;
         CurrentTable.ChocoboRaceStart = DateTime.Now;
@@ -204,7 +211,7 @@ public class ChocoboEngine
         string line1 = string.Join(" | ", Roster.Take(4).Select(r => $"#{r.Number} {r.Name} {r.Odds:0.0}x"));
         string line2 = string.Join(" | ", Roster.Skip(4).Select(r => $"#{r.Number} {r.Name} {r.Odds:0.0}x"));
 
-        QueueMessage("The chocobos are at the gate... AND THEY'RE OFF!");
+        QueueMessage($"The chocobos are at the gate... AND THEY'RE OFF! [Race:{LastRaceHash}]");
         LogAction("Chocobo race started");
         OnUIUpdate?.Invoke();
         return true;
@@ -429,4 +436,40 @@ public class ChocoboEngine
 
     private void LogAction(string action) =>
         CurrentTable.GameLog.Add($"[{DateTime.Now:HH:mm:ss}] [CHOCOBO] {action}");
+
+    // ── Race hash ─────────────────────────────────────────────────────────────
+    private const string B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+    private string GenerateRaceHash()
+    {
+        float maxProg = 0f;
+        for (int r = 0; r < Roster.Length; r++)
+            for (int s = 0; s < TotalSegments; s++)
+                maxProg = MathF.Max(maxProg, _segmentCumProgress[r, s]);
+        if (maxProg <= 0f) maxProg = 1f;
+
+        var sb = new StringBuilder(Roster.Length * TotalSegments);
+        for (int r = 0; r < Roster.Length; r++)
+            for (int s = 0; s < TotalSegments; s++)
+            {
+                int idx = (int)(_segmentCumProgress[r, s] / maxProg * 61f);
+                sb.Append(B62[Math.Clamp(idx, 0, 61)]);
+            }
+        return sb.ToString();
+    }
+
+    /// <summary>Decode a race hash into normalized progress [racer, segment] in 0..1 range.</summary>
+    public static float[,]? DecodeRaceHash(string hash, int racerCount = 8, int segCount = 6)
+    {
+        if (string.IsNullOrEmpty(hash) || hash.Length < racerCount * segCount) return null;
+        var result = new float[racerCount, segCount];
+        for (int r = 0; r < racerCount; r++)
+            for (int s = 0; s < segCount; s++)
+            {
+                int ci = r * segCount + s;
+                int idx = B62.IndexOf(hash[ci]);
+                result[r, s] = idx < 0 ? 0f : idx / 61f;
+            }
+        return result;
+    }
 }

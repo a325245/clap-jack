@@ -53,6 +53,8 @@ namespace SamplePlugin
         private Queue<string> MessageQueue { get; } = new();
         private Stopwatch MessageTimer { get; } = new();
         private const int MessageDelayMs = 400;
+        private const int TellDelayMs = 4000;
+        private bool _lastMessageWasTell = false;
 
         public static Plugin? PluginAccessorInstance { get; private set; }
 
@@ -77,7 +79,7 @@ namespace SamplePlugin
             UltimaEngine  = new UltimaEngine(Engine.CurrentTable);
             CommandParser = new CommandParser(Engine, RouletteEngine, CrapsEngine, BaccaratEngine, ChocoboEngine, PokerEngine, UltimaEngine);
             ChatHandler = new ChatHandler();
-            ChatParser  = new Chat.PlayerChatParser();
+            ChatParser  = new Chat.PlayerChatParser(Engine.CurrentTable);
 
             // Wire up roulette events (reuse same send helpers)
             RouletteEngine.OnChatMessage += SendGameMessage;
@@ -245,6 +247,10 @@ namespace SamplePlugin
 
         public void AddPartyToTable()
         {
+            // Suppress chat announcements during bulk add
+            bool prevAnnounce = Engine.CurrentTable.AnnounceNewPlayers;
+            Engine.CurrentTable.AnnounceNewPlayers = false;
+
             // Add the local player first
             string? localName = ClientState?.LocalPlayer?.Name.TextValue;
             if (!string.IsNullOrEmpty(localName))
@@ -261,6 +267,8 @@ namespace SamplePlugin
                 string? world = member.World.Value.Name.ExtractText();
                 Engine.AddPlayer(string.IsNullOrEmpty(world) ? name : $"{name}@{world}");
             }
+
+            Engine.CurrentTable.AnnounceNewPlayers = prevAnnounce;
         }
 
         public void SendGameMessage(string message)
@@ -298,9 +306,15 @@ namespace SamplePlugin
             {
                 if (MessageQueue.Count == 0) return;
 
-                if (MessageTimer.ElapsedMilliseconds >= MessageDelayMs)
+                // Use a longer delay after tells to avoid FFXIV's anti-spam filter
+                var nextMsg = MessageQueue.Peek();
+                bool nextIsTell = nextMsg.StartsWith("/tell ", StringComparison.OrdinalIgnoreCase);
+                int requiredDelay = (_lastMessageWasTell || nextIsTell) ? TellDelayMs : MessageDelayMs;
+
+                if (MessageTimer.ElapsedMilliseconds >= requiredDelay)
                 {
                     var message = MessageQueue.Dequeue();
+                    _lastMessageWasTell = message.StartsWith("/tell ", StringComparison.OrdinalIgnoreCase);
                     SendMessageToChat(message);
                     MessageTimer.Restart();
                 }
@@ -336,6 +350,86 @@ namespace SamplePlugin
         public void SaveConfiguration()
         {
             PluginInterface.SavePluginConfig(Configuration);
+        }
+
+        /// <summary>Send a sync tell to every seated player with their game/bank info.</summary>
+        public void SyncAllPlayers()
+        {
+            var table = Engine.CurrentTable;
+            string gameLabel = table.GameType switch
+            {
+                Models.GameType.Blackjack     => "Blackjack",
+                Models.GameType.Roulette      => "Roulette",
+                Models.GameType.Craps         => "Craps",
+                Models.GameType.Baccarat      => "Mini Baccarat",
+                Models.GameType.ChocoboRacing => "Chocobo Racing",
+                Models.GameType.TexasHoldEm   => "Texas Hold'Em",
+                Models.GameType.Ultima        => "Ultima!",
+                _                             => "None"
+            };
+            string players = string.Join(", ", table.Players.Values
+                .Where(x => !x.IsKicked)
+                .Select(x => $"{table.GetDisplayName(x.Name)}({x.Bank})"));
+
+            foreach (var p in table.Players.Values.Where(x => !x.IsKicked))
+            {
+                string server = !string.IsNullOrEmpty(p.Server) ? p.Server
+                    : ResolvePlayerServer(p.Name) ?? "Ultros";
+                string tellTarget = $"{p.Name}@{server}";
+                string msg = $"Game: {gameLabel} | Bank: {p.Bank}\uE049. | Players: {players}";
+                SendPlayerTell(tellTarget, msg);
+            }
+        }
+
+        /// <summary>Reset the entire plugin to factory-fresh state.</summary>
+        public void FullReset()
+        {
+            var table = Engine.CurrentTable;
+
+            // Stop any active games silently
+            RouletteEngine.ForceStop();
+            CrapsEngine.ForceStop();
+            PokerEngine.ForceStop();
+            UltimaEngine.ForceEnd();
+
+            // Silence all queued messages
+            RouletteEngine.ClearQueue();
+            CrapsEngine.ClearQueue();
+            BaccaratEngine.ClearQueue();
+            ChocoboEngine.ClearQueue();
+            PokerEngine.ClearQueue();
+            Engine.ClearQueue();
+
+            // Clear all players and state
+            table.Players.Clear();
+            table.BaccaratBets.Clear();
+            table.ChocoboBets.Clear();
+            table.TurnOrder.Clear();
+            table.DealerHand.Clear();
+            table.GameLog.Clear();
+
+            // Reset game state
+            table.GameType = Models.GameType.None;
+            table.GameState = Models.GameState.Lobby;
+            table.CurrentTurnIndex = 0;
+            table.TurnTimeRemaining = table.TurnTimeLimit;
+            table.RouletteSpinState = Models.RouletteSpinState.Idle;
+            table.RouletteResult = 0;
+            table.BaccaratPhase = Models.BaccaratPhase.WaitingForBets;
+            table.ChocoboRacePhase = Models.ChocoboRacePhase.Idle;
+            table.UltimaPhase = Models.UltimaPhase.WaitingForPlayers;
+            table.PokerPhase = Models.PokerPhase.WaitingForPlayers;
+            table.PokerPot = 0;
+            table.PokerCommunity.Clear();
+
+            // Reset engine state
+            table.BuildDeck();
+
+            // Single announcement
+            string cmd = Engine.ChatMode == Models.ChatMode.Party ? "/party Table reset." : "/say Table reset.";
+            SendGameMessage(cmd);
+
+            Log.Information("[RESET] Plugin fully reset to factory state.");
         }
 
         public void ToggleConfigUi()

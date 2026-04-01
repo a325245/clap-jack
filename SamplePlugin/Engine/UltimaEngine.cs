@@ -193,12 +193,12 @@ public class UltimaEngine
         if (startCard.Type == UltimaCardType.Rewind)
         {
             _table.UltimaClockwise = false;
-            openingEffect = "  Rewind — play starts counter-clockwise!";
+            openingEffect = "  Rewind - play starts counter-clockwise!";
         }
         else if (startCard.Type == UltimaCardType.Counterspell)
         {
             AdvanceTurn(); // skip first player
-            openingEffect = $"  Counterspell — {DN(_table.UltimaPlayerOrder[0])} is skipped!";
+            openingEffect = $"  Counterspell - {DN(_table.UltimaPlayerOrder[0])} is skipped!";
         }
         else if (startCard.Type == UltimaCardType.Summon)
         {
@@ -218,7 +218,10 @@ public class UltimaEngine
         string order = string.Join(" \u2192 ", _table.UltimaPlayerOrder.Select(DN));
         // Account for all queued messages so first-turn timer only starts after
         // every player has received their hand tell.
-        _startGameMsgCount = _table.UltimaPlayerOrder.Count + 2; // n tells + begins + order
+        // Extra padding ensures tells have at least 4 seconds between them.
+        int tellCount  = _table.UltimaPlayerOrder.Count;
+        int msPerMsg   = Math.Max(_table.MessageDelayMs, 4000);
+        _startGameMsgCount = (tellCount + 3) * msPerMsg / Math.Max(_table.MessageDelayMs, 1);
         Send($"\u2756 Ultima! begins! \u2756  [{startCard.Code}] {startCard.DisplayName}{openingEffect}");
         Send($"Turn order: {order}");
         AnnounceTopCard();
@@ -259,10 +262,10 @@ public class UltimaEngine
         if (card.IsWild)
         {
             if (string.IsNullOrWhiteSpace(chosenColor))
-            { error = "Polymorph requires a color: >PLAY PL WATER  (Water/Fire/Grass/Love)"; return false; }
+            { error = "Polymorph requires a color: >PLAY PL WATER  (Water/Fire/Grass/Light)"; return false; }
             var parsed = UltimaCard.ParseColor(chosenColor);
             if (parsed == null)
-            { error = $"Unknown color '{chosenColor}'. Use Water, Fire, Grass, or Love."; return false; }
+            { error = $"Unknown color '{chosenColor}'. Use Water, Fire, Grass, or Light."; return false; }
             newColor = parsed.Value;
         }
 
@@ -283,7 +286,7 @@ public class UltimaEngine
                 _pendingDrawCount = 0;
                 playMsg = n == 1
                     ? $"{DN(playerName)} drew a card and plays [{card.Code}] {card.DisplayName}{colorEx}!{countTag}"
-                    : $"{DN(playerName)} drew {n} cards until they could play \u2014 [{card.Code}] {card.DisplayName}{colorEx}!{countTag}";
+                    : $"{DN(playerName)} drew {n} cards until they could play - [{card.Code}] {card.DisplayName}{colorEx}!{countTag}";
             }
             else
             {
@@ -324,14 +327,14 @@ public class UltimaEngine
         {
             case UltimaCardType.Counterspell:
                 AdvanceTurn();
-                Send($"Counterspell! {DN(CurrentPlayer)} is skipped!");
+                Send($"\u2298 Counterspell! {DN(CurrentPlayer)} is skipped!");
                 AdvanceTurn();
                 break;
 
             case UltimaCardType.Rewind:
                 _table.UltimaClockwise = !_table.UltimaClockwise;
-                string dir = _table.UltimaClockwise ? "clockwise" : "counter-clockwise";
-                Send($"Rewind! Direction reversed — now {dir}!");
+                string dir = _table.UltimaClockwise ? "clockwise \u21BB" : "counter-clockwise \u21BA";
+                Send($"\u21BA Rewind! Direction reversed - now {dir}!");
                 if (_table.UltimaPlayerOrder.Count == 2)
                     AdvanceTurn(); // 2-player: reverse acts like skip
                 else
@@ -423,22 +426,25 @@ public class UltimaEngine
             return true;
         }
 
-        // Auto-choose colour for wilds (most common colour in remaining hand)
-        string? chosenColor = null;
+        // If the drawn playable card is wild, add it to hand and let the player
+        // choose the color via >PLAY or the UI color picker.
         if (playable.IsWild)
         {
-            var freq = hand.Where(c => !c.IsWild)
-                .GroupBy(c => c.Color)
-                .OrderByDescending(g => g.Count())
-                .FirstOrDefault();
-            chosenColor = UltimaCard.ColorDisplayName(freq?.Key ?? UltimaColor.Water).ToUpperInvariant();
+            hand.Add(playable);
+            string drewMsg = totalDrawn == 1
+                ? $"{DN(playerName)} drew a card. ({hand.Count} cards)"
+                : $"{DN(playerName)} drew {totalDrawn} cards. ({hand.Count} cards)";
+            Send(drewMsg);
+            Tell(playerName, $"You drew a wild [{playable.Code}] {playable.DisplayName}! Choose a color with >PLAY {playable.Code} [COLOR]  [Hand: {HandStr(playerName)}]");
+            OnUIUpdate?.Invoke();
+            return true;
         }
 
         // Add the playable card to hand so PlayCard can locate and remove it
         hand.Add(playable);
         // Tell PlayCard how many cards were drawn so it formats the combined announcement
         _pendingDrawCount = totalDrawn;
-        PlayCard(playerName, playable.Code, chosenColor, out _);
+        PlayCard(playerName, playable.Code, null, out _);
 
         return true;
     }
@@ -515,10 +521,10 @@ public class UltimaEngine
         double elapsed = (DateTime.Now - _turnStart).TotalSeconds;
         int    limit   = _table.TurnTimeLimit;
 
-        if (!_turnTimerWarned && elapsed >= limit * 0.66)
+        if (!_turnTimerWarned && elapsed >= limit - (limit / 3))
         {
             _turnTimerWarned = true;
-            Send($"!! {DN(CurrentPlayer)} has {limit - (int)elapsed}s left \u2014 play a card or >DRAW!");
+            Send($"!! {DN(CurrentPlayer)} has {limit - (int)elapsed}s left - play a card or >DRAW!");
         }
 
         if (elapsed >= limit)
