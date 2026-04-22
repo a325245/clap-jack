@@ -1,0 +1,28 @@
+{
+  "racers": [
+    { "name": "Gilded Gale", "speed": 88, "endurance": 65 },
+    { "name": "Thunderplume", "speed": 82, "endurance": 78 },
+    { "name": "Crimson Flash", "speed": 96, "endurance": 45 },
+    { "name": "Dusty Wings", "speed": 68, "endurance": 92 },
+    { "name": "Pale Comet", "speed": 75, "endurance": 82 },
+    { "name": "Cloud Dancer", "speed": 78, "endurance": 68 },
+    { "name": "Ivory Sprint", "speed": 84, "endurance": 44 },
+    { "name": "Plucky Pete", "speed": 62, "endurance": 44 },
+    { "name": "Bronze Tempest", "speed": 86, "endurance": 59 },
+    { "name": "Velvet Talon", "speed": 73, "endurance": 83 },
+    { "name": "Moonfeather", "speed": 79, "endurance": 76 },
+    { "name": "Ashen Rocket", "speed": 93, "endurance": 48 },
+    { "name": "Storm Sable", "speed": 81, "endurance": 71 },
+    { "name": "Mistral Wing", "speed": 77, "endurance": 74 },
+    { "name": "Goldrush", "speed": 90, "endurance": 52 },
+    { "name": "Pine Gallop", "speed": 69, "endurance": 88 },
+    { "name": "Dawn Courier", "speed": 85, "endurance": 63 },
+    { "name": "Cinder Dash", "speed": 92, "endurance": 47 },
+    { "name": "River Quill", "speed": 74, "endurance": 79 },
+    { "name": "Whisper Spur", "speed": 71, "endurance": 84 },
+    { "name": "Azure Bolt", "speed": 89, "endurance": 57 },
+    { "name": "Copper Breeze", "speed": 76, "endurance": 73 },
+    { "name": "Night Ember", "speed": 87, "endurance": 61 },
+    { "name": "Silver Relay", "speed": 80, "endurance": 69 }
+  ]
+}
