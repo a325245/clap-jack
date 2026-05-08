@@ -163,7 +163,7 @@ public sealed class TestBotService
         else if (text.Contains("[CRAPS]", StringComparison.OrdinalIgnoreCase)) currentGame = GameType.Craps;
         else if (text.Contains("[BACCARAT]", StringComparison.OrdinalIgnoreCase)) currentGame = GameType.Baccarat;
         else if (text.Contains("[CHOCOBO]", StringComparison.OrdinalIgnoreCase)) currentGame = GameType.ChocoboRacing;
-        else if (text.Contains("[POKER", StringComparison.OrdinalIgnoreCase)) currentGame = GameType.TexasHoldEm;
+        else if (text.Contains("[POKER", StringComparison.OrdinalIgnoreCase)) currentGame = GameType.TexasHoldEmPvP;
         else if (text.Contains("[ULTIMA", StringComparison.OrdinalIgnoreCase)) currentGame = GameType.Ultima;
     }
 
@@ -268,7 +268,8 @@ public sealed class TestBotService
             GameType.Craps => [amount, CrapsTargets[rng.Next(CrapsTargets.Length)]],
             GameType.Baccarat => [amount, BaccaratTargets[rng.Next(BaccaratTargets.Length)]],
             GameType.ChocoboRacing => chocoboTargets.Count > 0 ? [amount, chocoboTargets[rng.Next(chocoboTargets.Count)]] : Array.Empty<string>(),
-            GameType.TexasHoldEm => [amount],
+            GameType.TexasHoldEmPvP => [amount],
+            GameType.TexasHoldEmPvD => [amount],
             GameType.Ultima => [amount, UltimaTargets[rng.Next(UltimaTargets.Length)]],
             _ => Array.Empty<string>()
         };
@@ -306,7 +307,7 @@ public sealed class TestBotService
             if (options.Contains("STAND", StringComparer.OrdinalIgnoreCase)) return "STAND";
         }
 
-        if (currentGame == GameType.TexasHoldEm)
+        if (currentGame == GameType.TexasHoldEmPvP)
         {
             if (options.Contains("CHECK", StringComparer.OrdinalIgnoreCase) && rng.NextDouble() < 0.60) return "CHECK";
             if (options.Contains("CALL", StringComparer.OrdinalIgnoreCase) && rng.NextDouble() < 0.70) return "CALL";
@@ -328,7 +329,7 @@ public sealed class TestBotService
             "CRAPS" => GameType.Craps,
             "BACCARAT" => GameType.Baccarat,
             "CHOCOBORACING" => GameType.ChocoboRacing,
-            "TEXASHOLDEM" => GameType.TexasHoldEm,
+            "TEXASHOLDEM" => GameType.TexasHoldEmPvP,
             "ULTIMA" => GameType.Ultima,
             _ => GameType.None
         };

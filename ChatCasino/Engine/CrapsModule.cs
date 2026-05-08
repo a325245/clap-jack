@@ -192,7 +192,6 @@ public sealed class CrapsModule : BaseEngine
 
         var bets = GetBets(p);
         bets.Add(new CrapsBetEntry(target, amount));
-        Msg.QueuePartyMessage($"[CRAPS] {p.Name} bets {StandardizedFormatting.FormatCurrency(amount)} on {target}");
         return CmdResult.Ok("Bet accepted.");
     }
 

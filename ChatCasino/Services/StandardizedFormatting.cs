@@ -15,8 +15,10 @@ public static class StandardizedFormatting
         GameType.Craps => "[CRAPS]",
         GameType.Baccarat => "[BACCARAT]",
         GameType.ChocoboRacing => "[CHOCOBO]",
-        GameType.TexasHoldEm => "[POKER]",
+        GameType.TexasHoldEmPvP => "[POKER]",
+        GameType.TexasHoldEmPvD => "[PVD]",
         GameType.Ultima => "[ULTIMA]",
+        GameType.Bingo => "[BINGO]",
         _ => "[CASINO]"
     };
 

@@ -2,6 +2,7 @@ using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.Command;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Chat;
 using Dalamud.IoC;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
@@ -49,6 +50,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DynamicWindowRenderer renderer;
     private readonly ViewSyncService viewSync;
     private readonly TestBotService testBotService;
+    private readonly FlavorTextService flavorTextService;
 
     private bool isDealerView = true;
     private bool dealerConfirmed;
@@ -65,6 +67,7 @@ public sealed class Plugin : IDalamudPlugin
         this.commandManager = commandManager;
         this.chatGui = chatGui;
 
+        flavorTextService = new FlavorTextService(pluginInterface.ConfigDirectory.FullName);
         messageService = new MessagingService();
         timerService = new TimerService();
         deckService = new DeckService();
@@ -72,7 +75,7 @@ public sealed class Plugin : IDalamudPlugin
         playerService = new PlayerService();
         tableService = new TableService(messageService, timerService, playerService);
         gameManager = new GameManager(tableService, playerService);
-        renderer = new DynamicWindowRenderer(gameManager, tableService);
+        renderer = new DynamicWindowRenderer(gameManager, tableService, flavorTextService);
         viewSync = new ViewSyncService(playerService);
         testBotService = new TestBotService(gameManager, timerService);
 
@@ -158,10 +161,14 @@ public sealed class Plugin : IDalamudPlugin
             new BaccaratModule(messageService, deckService, playerService, bankService));
         gameManager.RegisterEngine(GameType.ChocoboRacing,
             new ChocoboRacingModule(messageService, deckService, playerService, bankService, timerService));
-        gameManager.RegisterEngine(GameType.TexasHoldEm,
+        gameManager.RegisterEngine(GameType.TexasHoldEmPvP,
             new TexasHoldEmModule(messageService, deckService, playerService, bankService, timerService, new PokerEvaluator(), new PotManager()));
+        gameManager.RegisterEngine(GameType.TexasHoldEmPvD,
+            new TexasHoldEmPvDModule(messageService, deckService, playerService, bankService, new PokerEvaluator()));
         gameManager.RegisterEngine(GameType.Ultima,
             new UltimaModule(messageService, deckService, playerService, timerService));
+        gameManager.RegisterEngine(GameType.Bingo,
+            new BingoModule(messageService, deckService, playerService, bankService));
     }
 
     private void OnCommand(string command, string args)
@@ -244,10 +251,7 @@ public sealed class Plugin : IDalamudPlugin
 
         if (parts.Length >= 1 && parts[0].Equals("join", StringComparison.OrdinalIgnoreCase))
         {
-            var local = ObjectTable.LocalPlayer?.Name.TextValue ?? string.Empty;
-            var world = parts.Length >= 2 ? parts[1] : ResolvePlayerWorld(local) ?? "Ultros";
-            if (!string.IsNullOrWhiteSpace(local))
-                _ = gameManager.RouteCommand(local, "JOIN", new[] { world });
+            // join is dealer-only via the UI; ignore self-join attempts from text parser
             return;
         }
     }
@@ -306,9 +310,10 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    private void OnChatMessage(XivChatType type, int timestamp, ref SeString sender, ref SeString message, ref bool isHandled)
+    private void OnChatMessage(IHandleableChatMessage chatMessage)
     {
-        var text = message.TextValue.Trim();
+        var text = chatMessage.Message.TextValue.Trim();
+        var type = chatMessage.LogKind;
 
         if (text.Contains("Your message was not heard. You must wait before", StringComparison.OrdinalIgnoreCase))
         {
@@ -326,13 +331,16 @@ public sealed class Plugin : IDalamudPlugin
             }
         }
 
-        var senderName = StripSenderPrefix(sender.TextValue);
+        var senderName = StripSenderPrefix(chatMessage.Sender.TextValue);
         var local = ObjectTable.LocalPlayer?.Name.TextValue ?? string.Empty;
         if (string.IsNullOrWhiteSpace(senderName) || senderName.Equals("You", StringComparison.OrdinalIgnoreCase))
             senderName = local;
 
+        // Resolve cross-world concat names like "Mike KaneyoLeviathan" → "Mike Kaneyo"
+        senderName = NormalizeSenderAgainstPlayers(senderName);
+
         var isFeedChannel = type is XivChatType.Echo or XivChatType.Say or XivChatType.Party;
-        var isTellChannel = type == (XivChatType)13;
+        var isTellChannel = type == XivChatType.TellIncoming;
 
         if (isFeedChannel)
             testBotService.OnChat(text);
@@ -390,10 +398,21 @@ public sealed class Plugin : IDalamudPlugin
             return false;
 
         var cmd = parts[0].ToUpperInvariant();
+
+        // Bingo shorthand: >3 or >3 cards → BUY 3
+        if (tableService.ActiveGameType == GameType.Bingo
+            && int.TryParse(cmd, out var buyNum))
+        {
+            cmd = "BUY";
+            parts = ["BUY", buyNum.ToString()];
+        }
+
         var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "BET","DEAL","HIT","STAND","DOUBLE","SPLIT","INSURANCE","SPIN","ROLL",
-            "CHECK","CALL","RAISE","FOLD","ALL","HAND","PLAY","DRAW","AFK","JOIN","LEAVE","REMOVE","HELP","RULES"
+            "CHECK","CALL","RAISE","FOLD","ALL","HAND","PLAY","DRAW","AFK","JOIN","LEAVE","REMOVE","HELP","RULES",
+            "1","2","3","ONE","TWO","THREE",
+            "BUY","CATCHUP","BINGO"
         };
 
         if (!known.Contains(cmd))
@@ -438,7 +457,7 @@ public sealed class Plugin : IDalamudPlugin
 
         if (!result.Success && !string.IsNullOrWhiteSpace(result.Message))
         {
-            messageService.QueuePartyMessage($"[CASINO] {result.Message}");
+            messageService.QueueAdminEcho($"[CASINO] {result.Message}");
         }
 
         Log.Information($"[CasinoCmd] {senderName}: {cmd} {string.Join(' ', cmdArgs)} => {(result.Success ? "OK" : "FAIL")}: {result.Message}");
@@ -538,8 +557,10 @@ public sealed class Plugin : IDalamudPlugin
             "craps" => GameType.Craps,
             "baccarat" => GameType.Baccarat,
             "chocobo" or "chocoboracing" => GameType.ChocoboRacing,
-            "poker" or "texasholdem" => GameType.TexasHoldEm,
+            "poker" or "texasholdem" or "pvp" or "texasholdem pvp" => GameType.TexasHoldEmPvP,
+            "pvd" or "texasholdem pvd" or "ultimaholdem" => GameType.TexasHoldEmPvD,
             "ultima" => GameType.Ultima,
+            "bingo" => GameType.Bingo,
             _ => GameType.None
         };
 
@@ -565,7 +586,37 @@ public sealed class Plugin : IDalamudPlugin
             }
         }
 
+        // Strip cross-world server suffix: "Firstname Lastname@World" → "Firstname Lastname"
+        var atIdx = trimmed.IndexOf('@');
+        if (atIdx > 0)
+            trimmed = trimmed[..atIdx].TrimEnd();
+
         return trimmed;
+    }
+
+    /// <summary>
+    /// Cross-world party chat delivers sender names like "Mike KaneyoLeviathan" (world appended
+    /// directly to the last name, no separator). Match the incoming name against all registered
+    /// players: if a player's registered name is a leading prefix of the raw sender string (followed
+    /// by one or more capital letters = the world name), return the registered name instead.
+    /// </summary>
+    private string NormalizeSenderAgainstPlayers(string rawName)
+    {
+        if (string.IsNullOrWhiteSpace(rawName)) return rawName;
+
+        foreach (var player in playerService.GetAllPlayers())
+        {
+            var pName = player.Name;
+            if (pName.Length >= rawName.Length) continue; // rawName must be longer
+            if (!rawName.StartsWith(pName, StringComparison.OrdinalIgnoreCase)) continue;
+
+            // The remainder after the player name should be a world name: starts with uppercase, all letters
+            var suffix = rawName[pName.Length..];
+            if (suffix.Length > 0 && char.IsUpper(suffix[0]) && suffix.All(char.IsLetter))
+                return pName;
+        }
+
+        return rawName;
     }
 
     private string? ResolvePlayerWorld(string playerName)

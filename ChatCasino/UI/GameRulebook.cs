@@ -11,7 +11,8 @@ public static class GameRulebook
         GameType.Roulette,
         GameType.Craps,
         GameType.Baccarat,
-        GameType.TexasHoldEm,
+        GameType.TexasHoldEmPvP,
+        GameType.TexasHoldEmPvD,
         GameType.ChocoboRacing,
         GameType.Ultima
     ];
@@ -42,11 +43,19 @@ public static class GameRulebook
             "Highest total closest to 9 wins.",
             "Round resolves automatically after deal."
         ],
-        GameType.TexasHoldEm =>
+        GameType.TexasHoldEmPvP =>
         [
             "Each player gets 2 hole cards plus 5 shared board cards.",
             "Best 5-card hand wins; side pots can split.",
             "Rounds auto-start after showdown/fold resolution."
+        ],
+        GameType.TexasHoldEmPvD =>
+        [
+            "Place an ante bet, then receive 2 hole cards + 5 board cards.",
+            "Dealer needs at least a pair to qualify; no qualify = ante push.",
+            "Payouts: Pair 1:1 | Trips 3:2 | Straight 2:1 | Flush 5:2 | Full House 3:1 | Quads 10:1 | SF 50:1 | Royal 250:1.",
+            "Type FOLD before DEAL resolution to forfeit your ante.",
+            "Dealer types DEAL twice: first to deal, second to resolve."
         ],
         GameType.ChocoboRacing =>
         [

@@ -110,7 +110,7 @@ public sealed class BankService : IBankService
         var token = reason.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
         return token.ToUpperInvariant() switch
         {
-            "POKER" => "TexasHoldEm",
+            "POKER" => "TexasHoldEmPvP",
             "CHOCOBO" => "ChocoboRacing",
             _ => token
         };

@@ -105,8 +105,8 @@ public sealed class BaccaratModule : BaseEngine
 
         player.Metadata["Baccarat.BetType"] = target;
         player.Metadata["Baccarat.BetAmount"] = amount;
+        Msg.QueuePartyMessage($"[BACCARAT] {player.Name} bets {amount}\uE049 on {target}");
         StatusText = "Bets placed";
-        Msg.QueuePartyMessage($"[BACCARAT] {player.Name} bets {StandardizedFormatting.FormatCurrency(amount)} on {target}");
         return CmdResult.Ok("Bet accepted.");
     }
 
@@ -144,12 +144,7 @@ public sealed class BaccaratModule : BaseEngine
 
         StatusText = "Round complete";
 
-        Msg.QueuePartyMessage($"[BACCARAT] Player hand: {string.Join(" ", playerHand.Select(c => c.GetCardDisplay()))} (Score: {pScore})");
-        Msg.QueuePartyMessage($"[BACCARAT] Banker hand: {string.Join(" ", bankerHand.Select(c => c.GetCardDisplay()))} (Score: {bScore})");
-        Msg.QueuePartyMessage($"[BACCARAT] Winner: {winner}!");
-
-        var reveal = $"[BACCARAT REVEAL] Player: {string.Join(" ", playerHand.Select(c => c.GetCardDisplay()))} ({pScore}) | Banker: {string.Join(" ", bankerHand.Select(c => c.GetCardDisplay()))} ({bScore}) | Winner: {winner}";
-        Msg.QueuePartyMessage(reveal);
+        Msg.QueuePartyMessage($"[BACCARAT REVEAL] Player: {string.Join(" ", playerHand.Select(c => c.GetCardDisplay()))} ({pScore}) | Banker: {string.Join(" ", bankerHand.Select(c => c.GetCardDisplay()))} ({bScore}) | Winner: {winner}");
 
         OnRoundComplete();
         return CmdResult.Ok("Deal resolved.");

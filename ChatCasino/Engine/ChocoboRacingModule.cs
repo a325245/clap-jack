@@ -150,8 +150,8 @@ public sealed class ChocoboRacingModule : BaseEngine
 
         var odds = raceOdds.TryGetValue(racer.Name, out var o) ? o : 0f;
         var oddsText = odds == (int)odds ? $"{(int)odds}:1" : $"{odds:0.#}:1";
-        StatusText = "Bets open";
         Msg.QueuePartyMessage($"[CHOCOBO] {p.Name} bets {amount}\uE049 on {racer.Name} ({oddsText})");
+        StatusText = "Bets open";
         return CmdResult.Ok("Bet accepted.");
     }
 
@@ -423,11 +423,6 @@ public sealed class ChocoboRacingModule : BaseEngine
         betsOpen = false;
         lastWinner = winner;
 
-        var allBets = Players.GetAllActivePlayers().SelectMany(GetBets).ToList();
-        var pool = allBets.Sum(b => b.Amount);
-        var winnerPool = allBets.Where(b => b.Racer.Equals(winner, StringComparison.OrdinalIgnoreCase)).Sum(b => b.Amount);
-        var odds = winnerPool <= 0 ? 0f : (float)pool / winnerPool;
-
         foreach (var player in Players.GetAllActivePlayers())
         {
             var bets = GetBets(player);
@@ -436,8 +431,9 @@ public sealed class ChocoboRacingModule : BaseEngine
                 if (!bet.Racer.Equals(winner, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                var payout = (int)Math.Floor(bet.Amount + bet.Amount * odds);
-                bank.Award(player, payout, "Chocobo race payout");
+                var fixedOdds = raceOdds.TryGetValue(winner, out var o) ? o : 1f;
+                var profit = (int)Math.Floor(bet.Amount * fixedOdds);
+                bank.Award(player, bet.Amount + profit, "Chocobo race payout");
             }
 
             player.Metadata.Remove("Chocobo.Bets");
@@ -608,4 +604,5 @@ public sealed class ChocoboRacingModule : BaseEngine
         public override IReadOnlyList<string> GetActionButtons() => Actions;
     }
 }
+
 

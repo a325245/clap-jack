@@ -12,9 +12,11 @@ public static class CommandRegistry
         [GameType.Roulette] = ["BET [amt] [target]", "SPIN"],
         [GameType.Craps] = ["BET [amt] PASS|DONTPASS|FIELD|SEVEN|ANYCRAPS|PLACE4/5/6/8/9/10", "ROLL"],
         [GameType.Baccarat] = ["BET [amt] PLAYER|BANKER|TIE", "DEAL"],
-        [GameType.TexasHoldEm] = ["FOLD", "CHECK", "CALL", "RAISE [amt]", "ALL IN", "DEAL", "HAND"],
+        [GameType.TexasHoldEmPvP] = ["FOLD", "CHECK", "CALL", "RAISE [amt]", "ALL IN", "DEAL", "HAND"],
+        [GameType.TexasHoldEmPvD] = ["BET [ante]", "DEAL", "FOLD", "HAND"],
         [GameType.ChocoboRacing] = ["BET [amt] [racer]", "START"],
-        [GameType.Ultima] = ["DEAL", "PLAY [code] [color?]", "DRAW", "HAND"]
+        [GameType.Ultima] = ["DEAL", "PLAY [code] [color?]", "DRAW", "HAND"],
+        [GameType.Bingo] = ["BUY [n]", "CATCHUP", "BINGO"],
     };
 
     public static IReadOnlyList<string> GetCommands(GameType gameType)

@@ -146,7 +146,9 @@ public sealed class PlayerViewWindow : Window
             "CRAPS" => GameType.Craps,
             "BACCARAT" => GameType.Baccarat,
             "CHOCOBORACING" => GameType.ChocoboRacing,
-            "TEXASHOLDEM" => GameType.TexasHoldEm,
+            "TEXASHOLDEM" => GameType.TexasHoldEmPvP,
+            "TEXASHOLDEM PVP" => GameType.TexasHoldEmPvP,
+            "TEXASHOLDEM PVD" => GameType.TexasHoldEmPvD,
             "ULTIMA" => GameType.Ultima,
             _ => GameType.None
         };
@@ -383,7 +385,8 @@ public sealed class PlayerViewWindow : Window
             case GameType.Craps: mirroredActions.AddRange(["BET", "ROLL"]); break;
             case GameType.Baccarat: mirroredActions.Add("BET"); break;
             case GameType.ChocoboRacing: mirroredActions.Add("BET"); break;
-            case GameType.TexasHoldEm: break;
+            case GameType.TexasHoldEmPvP: break;
+            case GameType.TexasHoldEmPvD: mirroredActions.Add("BET"); break;
         }
     }
 
@@ -440,7 +443,7 @@ public sealed class PlayerViewWindow : Window
         ImGui.Separator();
 
         // For poker and ultima, draw table visual above the players section
-        if (game == GameType.TexasHoldEm)
+        if (game is GameType.TexasHoldEmPvP or GameType.TexasHoldEmPvD)
             DrawPokerTableVisual();
         else if (game == GameType.Ultima)
             DrawUltimaTableVisual();
@@ -629,7 +632,7 @@ public sealed class PlayerViewWindow : Window
         {
             // Ultima dealer/table cards shown on the table visual, not here
         }
-        else if (game == GameType.TexasHoldEm)
+        else if (game is GameType.TexasHoldEmPvP or GameType.TexasHoldEmPvD)
         {
             // Board cards shown on the table visual, not here
         }
@@ -657,7 +660,7 @@ public sealed class PlayerViewWindow : Window
             var hasBlackjackHands = game == GameType.Blackjack && handGroups.Count > 0;
 
             if (me) ImGui.TextColored(new Vector4(0.6f, 1f, 0.6f, 1f), $"{name} (You)");
-            else if (game == GameType.TexasHoldEm && mirroredPokerRoles.TryGetValue(name, out var playerRole))
+            else if (game == GameType.TexasHoldEmPvP && mirroredPokerRoles.TryGetValue(name, out var playerRole))
             {
                 var roleColor = playerRole switch
                 {
@@ -667,6 +670,11 @@ public sealed class PlayerViewWindow : Window
                     _ => new Vector4(0.82f, 0.82f, 0.82f, 1f)
                 };
                 ImGui.TextColored(roleColor, $"{name} ({playerRole})");
+                if (hasBank || bet > 0)
+                {
+                    ImGui.SameLine();
+                    ImGui.TextDisabled($"Bank {(hasBank ? bank : 0)}\uE049 | In {(bet > 0 ? bet : 0)}\uE049");
+                }
             }
             else ImGui.TextUnformatted(name);
 
@@ -684,7 +692,7 @@ public sealed class PlayerViewWindow : Window
             else if (hasBank)
             {
                 ImGui.SameLine();
-                ImGui.TextDisabled($"Bank {bank}\uE049");
+                ImGui.TextDisabled(CasinoUI.PrivateBanks ? "Bank Hidden" : $"Bank {bank}\uE049");
             }
 
             if (hasBlackjackHands)
@@ -708,13 +716,13 @@ public sealed class PlayerViewWindow : Window
                     ImGui.PopID();
                 }
             }
-            else if (game == GameType.TexasHoldEm && me && mirroredPlayerCards.Count > 0)
+            else if (game == GameType.TexasHoldEmPvP && me && mirroredPlayerCards.Count > 0)
             {
                 CasinoUI.DrawCardTokens(mirroredPlayerCards);
             }
-            else if (game == GameType.Ultima && me && mirroredUltimaHand.Count > 0)
+            else if (game == GameType.TexasHoldEmPvD && me && mirroredPlayerCards.Count > 0)
             {
-                // Hand cards drawn below the table in DrawUltimaHandControls
+                CasinoUI.DrawCardTokens(mirroredPlayerCards);
             }
 
             if (mirroredSeatStates.TryGetValue(name, out var state) && !string.IsNullOrWhiteSpace(state))
@@ -758,7 +766,7 @@ public sealed class PlayerViewWindow : Window
             return;
         }
 
-        if (game == GameType.TexasHoldEm)
+        if (game == GameType.TexasHoldEmPvP)
         {
             var isMyTurn = !string.IsNullOrWhiteSpace(LocalPlayerName)
                 && !string.IsNullOrWhiteSpace(mirroredPokerCurrentTurn)
@@ -1261,7 +1269,7 @@ public sealed class PlayerViewWindow : Window
     private string BuildCommandText(string cmd)
     {
         var args = BuildArgs(cmd);
-        return args.Length == 0 ? $">{cmd}" : $">{cmd} {string.Join(' ', args)}";
+        return args.Length == 0 ? $">{cmd}" : $">{cmd} {string.Join(" ", args)}";
     }
 
     private string[] BuildArgs(string cmd)
@@ -1398,7 +1406,7 @@ public sealed class PlayerViewWindow : Window
 
         ParseCasinoBankSummary(normalized);
 
-        var betMatch = MatchTaggedOrPlain(normalized, @"^\[(?<game>[A-Z]+)\]\s+(.+?)\s+bets?\s+(\d+)");
+        var betMatch = MatchTaggedOrPlain(normalized, @"^\[(?<game>[AZ]+)\]\s+(.+?)\s+bets?\s+(\d+)");
         if (!betMatch.Success)
             betMatch = Regex.Match(plain, @"^(.+?)\s+bets?\s+(\d+)", RegexOptions.IgnoreCase);
 
@@ -1427,15 +1435,16 @@ public sealed class PlayerViewWindow : Window
             mirroredDealerCards.Clear();
             mirroredDealerCards.AddRange(ExtractCardTokens(normalized));
         }
-        else if (StartsWithTaggedOrPlain(normalized, "[BLACKJACK] Dealer:"))
+        else if (StartsWithTaggedOrPlain(normalized, "[BLACKJACK] Dealer reveals")
+              || StartsWithTaggedOrPlain(normalized, "[BLACKJACK] Dealer draws")
+              || StartsWithTaggedOrPlain(normalized, "[BLACKJACK] Dealer:"))
         {
             mirroredDealerCards.Clear();
             mirroredDealerCards.AddRange(ExtractCardTokens(normalized));
         }
 
         if (StartsWithTaggedOrPlain(normalized, "[BLACKJACK] Round complete")
-            || StartsWithTaggedOrPlain(normalized, "[CASINO] Blackjack round complete")
-            || StartsWithTaggedOrPlain(normalized, "[BLACKJACK] Dealer:"))
+            || StartsWithTaggedOrPlain(normalized, "[CASINO] Blackjack round complete"))
         {
             mirroredStatus = "Waiting for bets";
             mirroredActions.Clear();
@@ -1447,12 +1456,12 @@ public sealed class PlayerViewWindow : Window
         {
         }
 
-        if ((normalized.StartsWith("[CASINO]", StringComparison.OrdinalIgnoreCase) || plain.Contains("(Bank", StringComparison.OrdinalIgnoreCase))
-            && normalized.Contains("(Bank", StringComparison.OrdinalIgnoreCase)
+        if ((normalized.StartsWith("[CASINO]", StringComparison.OrdinalIgnoreCase) || plain.Contains("(Bank", StringComparison.OrdinalIgnoreCase) || plain.Contains("(Bank Hidden", StringComparison.OrdinalIgnoreCase))
+            && (normalized.Contains("(Bank", StringComparison.OrdinalIgnoreCase) || normalized.Contains("(Bank Hidden", StringComparison.OrdinalIgnoreCase))
             && !normalized.Contains("round complete", StringComparison.OrdinalIgnoreCase))
         {
             var payoutNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (Match pm in Regex.Matches(normalized, @"(?:^\[CASINO\]\s+|^\s*|\|\s*)(?<name>.+?)\s+[+-]?\d+\D*\s*\(Bank\s+(?<bank>\d+)\D*\)", RegexOptions.IgnoreCase))
+            foreach (Match pm in Regex.Matches(normalized, @"(?:^\[CASINO\]\s+|^\s*|\|\s*)(?<name>.+?)\s+(?:[+-]?\d+\D*|WIN|LOSE|PUSH)\s*\((?:Bank\s+(?<bank>\d+)\D*|Bank Hidden)\)", RegexOptions.IgnoreCase))
             {
                 var pn = NormalizeMirroredPlayerName(pm.Groups["name"].Value);
                 if (!string.IsNullOrWhiteSpace(pn))
@@ -1486,93 +1495,14 @@ public sealed class PlayerViewWindow : Window
             }
         }
 
-        var blackjackDouble = MatchTaggedOrPlain(normalized, @"^\[BLACKJACK\]\s+(.+?)\s+doubles:\s+(.+?)\s+\(([^\)]+)\)$");
-        if (blackjackDouble.Success)
-        {
-            var name = NormalizeMirroredPlayerName(blackjackDouble.Groups[1].Value);
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                if (mirroredBets.TryGetValue(name, out var total) && total > 0)
-                    mirroredBets[name] = total + Math.Max(1, total / Math.Max(1, mirroredBlackjackHands.TryGetValue(name, out var hg) ? hg.Count : 1));
-                var cards = ExtractCardTokens(blackjackDouble.Groups[2].Value);
-                if (cards.Count > 0)
-                {
-                    if (!mirroredBlackjackHands.TryGetValue(name, out var groups)) mirroredBlackjackHands[name] = groups = [];
-                    var active = GetMirroredBlackjackActiveHandIndex(name);
-                    while (groups.Count <= active) groups.Add([]);
-                    groups[active] = cards;
-                    if (!mirroredBlackjackHandResults.TryGetValue(name, out var results)) mirroredBlackjackHandResults[name] = results = [];
-                    while (results.Count <= active) results.Add(string.Empty);
-                    results[active] = blackjackDouble.Groups[3].Value.Trim();
-                }
-            }
-        }
-
-        var blackjackSplit = MatchTaggedOrPlain(normalized, @"^\[BLACKJACK\]\s+(.+?)\s+splits\.");
-        if (blackjackSplit.Success)
-        {
-            var name = NormalizeMirroredPlayerName(blackjackSplit.Groups[1].Value);
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                if (mirroredBets.TryGetValue(name, out var total) && total > 0)
-                    mirroredBets[name] = total * 2;
-                mirroredBlackjackHands.Remove(name);
-                mirroredBlackjackHandResults.Remove(name);
-                mirroredBlackjackActiveHands[name] = 0;
-            }
-        }
-
-        var blackjackSplitHand = MatchTaggedOrPlain(normalized, @"^\[BLACKJACK\]\s+(.+?)\s+H(\d+):\s+(.+?)\s+\(([^\)]+)\)$");
-        if (blackjackSplitHand.Success)
-        {
-            var name = NormalizeMirroredPlayerName(blackjackSplitHand.Groups[1].Value);
-            if (!string.IsNullOrWhiteSpace(name) && int.TryParse(blackjackSplitHand.Groups[2].Value, out var handNum))
-            {
-                var handIdx = Math.Max(0, handNum - 1);
-                var cards = ExtractCardTokens(blackjackSplitHand.Groups[3].Value);
-                if (cards.Count > 0)
-                {
-                    if (!mirroredBlackjackHands.TryGetValue(name, out var groups)) mirroredBlackjackHands[name] = groups = [];
-                    while (groups.Count <= handIdx) groups.Add([]);
-                    groups[handIdx] = cards;
-                    if (!mirroredBlackjackHandResults.TryGetValue(name, out var results)) mirroredBlackjackHandResults[name] = results = [];
-                    while (results.Count <= handIdx) results.Add(string.Empty);
-                    results[handIdx] = blackjackSplitHand.Groups[4].Value.Trim();
-                }
-            }
-        }
-
-        if (!blackjackDouble.Success && !blackjackSplitHand.Success)
-        {
-            var blackjackCards = MatchTaggedOrPlain(normalized, @"^\[BLACKJACK\]\s+(.+?):\s+(.+?)\s+\(([^\)]+)\)$");
-            if (blackjackCards.Success)
-            {
-                var name = NormalizeMirroredPlayerName(blackjackCards.Groups[1].Value);
-                if (!string.IsNullOrWhiteSpace(name))
-                {
-                    var cards = ExtractCardTokens(blackjackCards.Groups[2].Value);
-                    if (cards.Count > 0)
-                    {
-                        if (!mirroredBlackjackHands.TryGetValue(name, out var groups)) mirroredBlackjackHands[name] = groups = [];
-                        var active = GetMirroredBlackjackActiveHandIndex(name);
-                        while (groups.Count <= active) groups.Add([]);
-                        groups[active] = cards;
-                        if (!mirroredBlackjackHandResults.TryGetValue(name, out var results)) mirroredBlackjackHandResults[name] = results = [];
-                        while (results.Count <= active) results.Add(string.Empty);
-                        results[active] = blackjackCards.Groups[3].Value.Trim();
-                    }
-                }
-            }
-        }
-
-        var blackjackTurn = MatchTaggedOrPlain(normalized, @"^\[BLACKJACK\]\s+Turn:\s+(.+?)(?:\s+H(\d+))?\s+->\s+(.+?)\s+\(([^\)]+)\)$");
+        var blackjackTurn = MatchTaggedOrPlain(normalized, @"^\[BLACKJACK\]\s+(.+?)(?:\s+H(\d+))?\s+->\s+(.+?)\s+\(([^\)]+)\)$");
         if (blackjackTurn.Success)
         {
             var name = NormalizeMirroredPlayerName(blackjackTurn.Groups[1].Value);
             if (!string.IsNullOrWhiteSpace(name))
             {
                 RememberPlayer(name);
-                mirroredStatus = $"Turn: {name}";
+                mirroredStatus = $"{name}";
                 var handIdx = blackjackTurn.Groups[2].Success && int.TryParse(blackjackTurn.Groups[2].Value, out var h) ? Math.Max(0, h - 1) : 0;
                 mirroredBlackjackActiveHands[name] = handIdx;
                 var cards = ExtractCardTokens(blackjackTurn.Groups[3].Value);
@@ -1724,6 +1654,10 @@ public sealed class PlayerViewWindow : Window
             mirroredPokerBoardCards.Clear();
             mirroredPokerBoardCards.AddRange(ExtractCardTokens(pokerBoard.Groups[1].Value));
             if (pokerBoard.Groups[2].Success && int.TryParse(pokerBoard.Groups[2].Value, out var p2)) mirroredPokerPot = p2;
+            foreach (var key in mirroredSeatStates.Keys.ToList())
+                mirroredSeatStates[key] = string.Empty;
+            foreach (var key in mirroredBets.Keys.ToList())
+                mirroredBets[key] = 0;
             mirroredStatus = "Hand in progress";
         }
 
@@ -1773,7 +1707,6 @@ public sealed class PlayerViewWindow : Window
         if (pokerPrompt.Success)
         {
             var promptPlayer = NormalizeMirroredPlayerName(pokerPrompt.Groups[1].Value);
-            if (!string.IsNullOrWhiteSpace(promptPlayer)) mirroredPokerCurrentTurn = promptPlayer;
             if (!string.IsNullOrWhiteSpace(LocalPlayerName) && promptPlayer.Equals(LocalPlayerName, StringComparison.OrdinalIgnoreCase))
             {
                 mirroredActions.Clear();
@@ -1799,20 +1732,20 @@ public sealed class PlayerViewWindow : Window
         var ultimaPlayed = MatchTaggedOrPlain(normalized, @"^\[ULTIMA\]\s+(.+?)\s+\((\d+)\)\s+played\s+(\S+)\.\s+Color:\s+(\S+)\.\s+Dir:\s+(\S+)\.\s+Turn:\s+(.+)$");
         if (ultimaPlayed.Success)
         {
-            var who = NormalizeMirroredPlayerName(ultimaPlayed.Groups[1].Value);
+            var name = NormalizeMirroredPlayerName(ultimaPlayed.Groups[1].Value);
             var playedCode = ultimaPlayed.Groups[3].Value.Trim();
             mirroredUltimaTopCard = playedCode;
             mirroredUltimaColor = ultimaPlayed.Groups[4].Value.Trim();
             mirroredUltimaDirection = ultimaPlayed.Groups[5].Value.Trim();
             mirroredUltimaTurn = NormalizeMirroredPlayerName(ultimaPlayed.Groups[6].Value);
             if (int.TryParse(ultimaPlayed.Groups[2].Value, out var reportedCount))
-                mirroredUltimaCardCounts[who] = reportedCount;
-            if (!string.IsNullOrWhiteSpace(LocalPlayerName) && who.Equals(LocalPlayerName, StringComparison.OrdinalIgnoreCase))
+                mirroredUltimaCardCounts[name] = reportedCount;
+            if (!string.IsNullOrWhiteSpace(LocalPlayerName) && name.Equals(LocalPlayerName, StringComparison.OrdinalIgnoreCase))
             {
                 var idx = mirroredUltimaHand.FindIndex(c => c.Equals(playedCode, StringComparison.OrdinalIgnoreCase));
                 if (idx >= 0) mirroredUltimaHand.RemoveAt(idx);
             }
-            RememberPlayer(who);
+            RememberPlayer(name);
             mirroredStatus = $"{mirroredUltimaTurn}'s turn";
         }
 
@@ -1968,8 +1901,7 @@ public sealed class PlayerViewWindow : Window
             || t.Equals("Wheel", StringComparison.OrdinalIgnoreCase)
             || t.Equals("Board", StringComparison.OrdinalIgnoreCase)
             || t.Equals("Player Hand", StringComparison.OrdinalIgnoreCase)
-            || t.Equals("Banker Hand", StringComparison.OrdinalIgnoreCase)
-            || t.StartsWith("Dealer shows", StringComparison.OrdinalIgnoreCase))
+            || t.Equals("Banker Hand", StringComparison.OrdinalIgnoreCase))
             return string.Empty;
 
         return t;
@@ -2030,32 +1962,41 @@ public sealed class PlayerViewWindow : Window
             return;
 
         // Tagged format and natural format are both accepted.
-        foreach (Match m in Regex.Matches(text, @"(?:^\[CASINO\]\s+|^\s*|\|\s*)(?<name>.+?)\s+[+-]?\d+\D*\s*\(Bank\s+(?<bank>\d+)\D*\)", RegexOptions.IgnoreCase))
+        foreach (Match m in Regex.Matches(text, @"(?:^\[CASINO\]\s+|^\s*|\|\s*)(?<name>.+?)\s+(?:[+-]?\d+\D*|WIN|LOSE|PUSH)\s*\((?:Bank\s+(?<bank>\d+)\D*|Bank Hidden)\)", RegexOptions.IgnoreCase))
         {
             var name = NormalizeMirroredPlayerName(m.Groups["name"].Value);
             if (string.IsNullOrWhiteSpace(name))
                 continue;
 
-            if (int.TryParse(m.Groups["bank"].Value, out var bank))
-            {
-                mirroredKnownPlayers.Add(name);
-                mirroredBanks[name] = bank;
-            }
+            mirroredKnownPlayers.Add(name);
+            mirroredBanks.Remove(name);
+            mirroredBets.Remove(name);
+            mirroredSeatStates.Remove(name);
+            mirroredBlackjackHands.Remove(name);
+            mirroredBlackjackHandResults.Remove(name);
+            mirroredBlackjackActiveHands.Remove(name);
+            foreach (var list in mirroredRouletteBetMap.Values)
+                list.RemoveAll(line => line.StartsWith($"{name} ", StringComparison.OrdinalIgnoreCase));
+            foreach (var list in mirroredCrapsBetMap.Values)
+                list.RemoveAll(line => line.StartsWith($"{name} ", StringComparison.OrdinalIgnoreCase));
         }
 
         // Also support single-entry natural lines without [CASINO] or pipe separators.
         if (!text.Contains('|') && !text.StartsWith("[CASINO]", StringComparison.OrdinalIgnoreCase))
         {
-            var single = Regex.Match(text, @"^(?<name>.+?)\s+[+-]?\d+\D*\s*\(Bank\s+(?<bank>\d+)\D*\)$", RegexOptions.IgnoreCase);
+            var single = Regex.Match(text, @"^(?<name>.+?)\s+(?:[+-]?\d+\D*|WIN|LOSE|PUSH)\s*\((?:Bank\s+(?<bank>\d+)\D*|Bank Hidden)\)$", RegexOptions.IgnoreCase);
             if (single.Success)
             {
                 var name = NormalizeMirroredPlayerName(single.Groups["name"].Value);
-                if (!string.IsNullOrWhiteSpace(name) && int.TryParse(single.Groups["bank"].Value, out var bank))
+                if (!string.IsNullOrWhiteSpace(name))
                 {
                     mirroredKnownPlayers.Add(name);
-                    mirroredBanks[name] = bank;
+                    if (single.Groups["bank"].Success && int.TryParse(single.Groups["bank"].Value, out var bank))
+                        mirroredBanks[name] = bank;
                 }
             }
         }
     }
 }
+
+

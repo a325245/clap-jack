@@ -15,7 +15,7 @@ namespace SamplePlugin
         private BlackjackEngine engine;
         public bool IsVisible { get; set; }
         /// <summary>The dealer is always the local player — derived from the game client, never entered manually.</summary>
-        public string AdminName => Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+        public string AdminName => Plugin.PlayerState?.CharacterName ?? string.Empty;
 
         // UI State for editing
         private Dictionary<string, string> editingName = new();
@@ -197,7 +197,7 @@ namespace SamplePlugin
 
             // ── Player View mode — render player view and return ──────────────
             {
-                string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+                string myName = Plugin.PlayerState?.CharacterName ?? string.Empty;
                 var pvState = plugin.ChatParser.State;
                 if (pvState.ShouldAutoSwitch)
                 {
@@ -212,7 +212,7 @@ namespace SamplePlugin
             if (_viewMode == 1)
             {
                 ImGui.Separator();
-                string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+                string myName = Plugin.PlayerState?.CharacterName ?? string.Empty;
                 plugin.PlayerView.DrawContent(myName);
                 return;
             }
@@ -2971,7 +2971,7 @@ namespace SamplePlugin
 
                 // ── Dealer's own hole cards (so they can play as a player too) ──────────
                 {
-                    string adminName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+                    string adminName = Plugin.PlayerState?.CharacterName ?? string.Empty;
                     int adminSeat = -1;
                     for (int asi = 0; asi < PokerEngine.MaxSeats; asi++)
                     {
@@ -3394,3 +3394,4 @@ namespace SamplePlugin
         }
     }
 }
+

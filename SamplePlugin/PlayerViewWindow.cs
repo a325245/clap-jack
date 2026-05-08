@@ -258,7 +258,7 @@ public class PlayerViewWindow
 
     private void DrawBJCommands(PlayerViewState state)
     {
-        string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+        string myName = Plugin.PlayerState?.CharacterName ?? string.Empty;
         bool myTurn = !string.IsNullOrEmpty(myName) && state.BJActive &&
             state.BJCurrentPlayer.StartsWith(myName.Split(' ')[0], StringComparison.OrdinalIgnoreCase);
         var cmds = state.BJAvailableCmds;
@@ -315,7 +315,7 @@ public class PlayerViewWindow
             SendCmd($"BET {betTypes[state.PVCrapsBetType]} {state.PVBetAmount}");
 
         ImGui.SameLine(0, 16);
-        string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+        string myName = Plugin.PlayerState?.CharacterName ?? string.Empty;
         bool isShooter = !string.IsNullOrEmpty(myName) &&
             state.CrapsShooter.StartsWith(myName.Split(' ')[0], StringComparison.OrdinalIgnoreCase);
         ImGui.BeginDisabled(!isShooter);
@@ -344,7 +344,7 @@ public class PlayerViewWindow
 
     private void DrawPokerCommands(PlayerViewState state)
     {
-        string myName = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+        string myName = Plugin.PlayerState?.CharacterName ?? string.Empty;
         bool myTurn = !string.IsNullOrEmpty(myName) &&
             state.PokerActionTo.StartsWith(myName.Split(' ')[0], StringComparison.OrdinalIgnoreCase);
         var cmds = state.PokerAvailCmds;
@@ -952,7 +952,7 @@ public class PlayerViewWindow
             if (!lst.Contains(bet.PlayerName)) lst.Add(bet.PlayerName);
         }
 
-        string myNameRou = Plugin.ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+        string myNameRou = Plugin.PlayerState?.CharacterName ?? string.Empty;
         DrawRouletteGrid(state, betMap, myNameRou);
     }
 
@@ -1715,3 +1715,4 @@ public class PlayerViewWindow
             dl.AddText(pos+new Vector2(2,1), fg, tiny);
     }
 }
+

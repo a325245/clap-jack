@@ -20,6 +20,7 @@ public sealed class GameManager
 
     public string DealerIdentity { get; private set; } = string.Empty;
     public Action<string>? OnCommandFeedback { get; set; }
+    public Action<string, string, string[]>? OnCommandExecuting { get; set; }
 
     public void SetDealerIdentity(string localPlayerName)
     {
@@ -153,6 +154,7 @@ public sealed class GameManager
             return result;
         }
 
+        OnCommandExecuting?.Invoke(player, cmd, args);
         result = tableService.ActiveEngine.Execute(player, cmd, args);
         if (!result.Success || !string.IsNullOrWhiteSpace(result.Message))
             OnCommandFeedback?.Invoke(result.Message);

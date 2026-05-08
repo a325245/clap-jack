@@ -28,6 +28,31 @@ public static class Logger
     }
 }
 
+public sealed class RoundRecord
+{
+    public int RoundNumber { get; init; }
+    public GameType GameType { get; init; }
+    public DateTime StartedUtc { get; init; } = DateTime.UtcNow;
+    public List<string> Lines { get; } = new();
+}
+
+public static class RoundHistory
+{
+    private static readonly List<RoundRecord> Records = new();
+    private static int nextRoundNumber = 1;
+
+    public static IReadOnlyList<RoundRecord> All => Records;
+
+    public static RoundRecord StartRound(GameType gameType)
+    {
+        var rec = new RoundRecord { RoundNumber = nextRoundNumber++, GameType = gameType };
+        Records.Add(rec);
+        if (Records.Count > 10)
+            Records.RemoveAt(0);
+        return rec;
+    }
+}
+
 public abstract class BaseEngine : IGameProcessor
 {
     protected BaseEngine(
@@ -51,6 +76,8 @@ public abstract class BaseEngine : IGameProcessor
 
     public event Action<Player>? OnPlayerJoined;
     public event Action<Player>? OnPlayerLeft;
+
+    protected RoundRecord? CurrentRound { get; private set; }
 
     public virtual void Tick()
     {
@@ -104,6 +131,16 @@ public abstract class BaseEngine : IGameProcessor
         });
     }
 
+    protected void BeginRoundRecord()
+    {
+        CurrentRound = RoundHistory.StartRound(GameType);
+    }
+
+    protected void LogRound(string line)
+    {
+        CurrentRound?.Lines.Add(line);
+    }
+
     public virtual void OnPreStart() { }
     public virtual void OnStart() { }
     public virtual void OnRoundComplete()
@@ -124,8 +161,9 @@ public abstract class BaseEngine : IGameProcessor
                 p.Metadata.Remove(key);
             }
 
-            var sign = delta >= 0 ? "+" : string.Empty;
-            lines.Add($"{p.Name} {sign}{delta}\uE049 (Bank {p.CurrentBank}\uE049)");
+            var deltaText = PrivacyFormatting.FormatRoundDelta(delta);
+            var bankText = PrivacyFormatting.FormatBankLabel(p.CurrentBank);
+            lines.Add($"{p.Name} {deltaText} ({bankText})");
         }
 
         for (var i = 0; i < lines.Count; i += 4)
@@ -134,6 +172,7 @@ public abstract class BaseEngine : IGameProcessor
             Msg.QueuePartyMessage($"[CASINO] {chunk}");
         }
     }
+
     public virtual void OnForceStop() { }
 
     public abstract CmdResult Execute(string player, string cmd, string[] args);

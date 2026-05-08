@@ -74,6 +74,12 @@ public sealed class PokerEvaluator
         var ranks = hand.Select(GetRank).OrderByDescending(x => x).ToList();
         var groups = ranks.GroupBy(x => x).OrderByDescending(g => g.Count()).ThenByDescending(g => g.Key).ToList();
         var flush = hand.Select(c => c.Suit).Distinct().Count() == 1;
+        var flushRanks = hand
+            .GroupBy(c => c.Suit)
+            .Where(g => g.Count() >= 5)
+            .Select(g => g.Select(GetRank).OrderByDescending(x => x).Take(5).ToList())
+            .OrderByDescending(g => g[0])
+            .FirstOrDefault();
         var straight = IsStraight(ranks, out var highStraight);
 
         if (flush && straight)
@@ -85,8 +91,8 @@ public sealed class PokerEvaluator
         if (groups[0].Count() == 3 && groups[1].Count() == 2)
             return new HandRank(PokerRankCategory.FullHouse, new[] { groups[0].Key, groups[1].Key }, $"Full House ({PluralRankName(groups[0].Key)} over {PluralRankName(groups[1].Key)})");
 
-        if (flush)
-            return new HandRank(PokerRankCategory.Flush, ranks, $"Flush ({RankName(ranks[0])} high)");
+        if (flush && flushRanks is not null)
+            return new HandRank(PokerRankCategory.Flush, flushRanks, $"Flush ({RankName(flushRanks[0])} high)");
 
         if (straight)
             return new HandRank(PokerRankCategory.Straight, new[] { highStraight }, $"Straight ({RankName(highStraight)} high)");

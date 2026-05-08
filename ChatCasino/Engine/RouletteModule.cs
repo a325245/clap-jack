@@ -126,9 +126,11 @@ public sealed class RouletteModule : BaseEngine
             bets.Add(new RouletteBetEntry(target, amt));
         }
 
+        var targetList = string.Join(", ", targets);
+        Msg.QueuePartyMessage($"[ROULETTE] {player.Name} bets {amt}\uE049 on {targetList}");
+
         StatusText = "Waiting for spin";
         lastBetReceivedUtc = DateTime.UtcNow;
-        Msg.QueuePartyMessage($"[ROULETTE] {player.Name} bets {StandardizedFormatting.FormatCurrency(amt)} on {string.Join(", ", targets)}");
         return CmdResult.Ok("Bet accepted.");
     }
 

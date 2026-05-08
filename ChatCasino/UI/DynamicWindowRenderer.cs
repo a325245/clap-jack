@@ -23,6 +23,7 @@ public sealed class DynamicWindowRenderer
 
     private readonly GameManager gameManager;
     private readonly ITableService tableService;
+    private FlavorTextService? flavorTextService;
     private readonly Dictionary<string, string> worldEditByPlayer = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> bankEditByPlayer = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> bankEditActivePlayers = new(StringComparer.OrdinalIgnoreCase);
@@ -33,6 +34,7 @@ public sealed class DynamicWindowRenderer
     private string ruleInput = "H17";
     private string targetInput = "RED";
     private int targetPresetIndex;
+    private string bingoPayTarget = string.Empty;
     private GameType selectedGame = GameType.None;
     private string commandSenderPlayer = string.Empty;
 
@@ -53,10 +55,11 @@ public sealed class DynamicWindowRenderer
     public Action<string>? DealerBroadcastRequested { get; set; }
     public Action? FactoryResetRequested { get; set; }
 
-    public DynamicWindowRenderer(GameManager gameManager, ITableService tableService)
+    public DynamicWindowRenderer(GameManager gameManager, ITableService tableService, FlavorTextService? flavorTextService = null)
     {
         this.gameManager = gameManager;
         this.tableService = tableService;
+        this.flavorTextService = flavorTextService;
     }
 
     public ICasinoViewModel? LastRendered { get; private set; }
@@ -164,8 +167,15 @@ public sealed class DynamicWindowRenderer
             DrawCrapsVisual(vm);
         else if (tableService.ActiveGameType == GameType.ChocoboRacing)
             DrawChocoboRaceVisual(vm);
-        else if (tableService.ActiveGameType is GameType.TexasHoldEm or GameType.Ultima)
-            DrawOvalTableVisual(vm, tableService.ActiveGameType == GameType.TexasHoldEm ? "Texas Hold'Em Table" : "Ultima Table");
+        else if (tableService.ActiveGameType is GameType.TexasHoldEmPvP or GameType.TexasHoldEmPvD or GameType.Ultima)
+            DrawOvalTableVisual(vm, tableService.ActiveGameType switch
+            {
+                GameType.TexasHoldEmPvP => "Texas Hold'Em PvP",
+                GameType.TexasHoldEmPvD => "Texas Hold'Em PvD",
+                _ => "Ultima Table"
+            });
+        else if (tableService.ActiveGameType == GameType.Bingo)
+            DrawBingoVisual(vm, dealerView);
 
         var seats = vm.Seats;
 
@@ -285,7 +295,7 @@ public sealed class DynamicWindowRenderer
 
                         var cardsToDraw = seat.HandGroups[i];
                         if (dealerView
-                            && tableService.ActiveGameType is GameType.TexasHoldEm or GameType.Ultima
+                            && tableService.ActiveGameType is GameType.TexasHoldEmPvP or GameType.TexasHoldEmPvD or GameType.Ultima
                             && !CasinoUI.ShowOtherPlayerHands
                             && (string.IsNullOrWhiteSpace(localPlayerName) || !seat.PlayerName.Equals(localPlayerName, StringComparison.OrdinalIgnoreCase)))
                         {
@@ -313,7 +323,7 @@ public sealed class DynamicWindowRenderer
                 {
                     var cardsToDraw = seat.Cards;
                     if (dealerView
-                        && tableService.ActiveGameType is GameType.TexasHoldEm or GameType.Ultima
+                        && tableService.ActiveGameType is GameType.TexasHoldEmPvP or GameType.TexasHoldEmPvD or GameType.Ultima
                         && !CasinoUI.ShowOtherPlayerHands
                         && (string.IsNullOrWhiteSpace(localPlayerName) || !seat.PlayerName.Equals(localPlayerName, StringComparison.OrdinalIgnoreCase)))
                     {
@@ -353,7 +363,7 @@ public sealed class DynamicWindowRenderer
                 // Auto-track active turn player for turn-based games
                 var activeTurnSeat = players.FirstOrDefault(s => s.IsActiveTurn && !s.IsDealer);
                 if (activeTurnSeat != null && !string.IsNullOrWhiteSpace(activeTurnSeat.PlayerName)
-                    && tableService.ActiveGameType is GameType.Blackjack or GameType.TexasHoldEm or GameType.Craps)
+                    && tableService.ActiveGameType is GameType.Blackjack or GameType.TexasHoldEmPvP or GameType.Craps)
                 {
                     commandSenderPlayer = activeTurnSeat.PlayerName;
                 }
@@ -380,6 +390,23 @@ public sealed class DynamicWindowRenderer
 
         if (ImGui.CollapsingHeader("Commands", ImGuiTreeNodeFlags.DefaultOpen))
         {
+            // Bingo dealer controls — separate layout with PAY name input
+            if (tableService.ActiveGameType == GameType.Bingo && dealerView)
+            {
+                if (ImGui.Button("OPEN")) _ = gameManager.RouteCommand(gameManager.DealerIdentity, "OPEN", []);
+                ImGui.SameLine();
+                if (ImGui.Button("DRAW")) _ = gameManager.RouteCommand(gameManager.DealerIdentity, "DRAW", []);
+                ImGui.SameLine();
+                if (ImGui.Button("RESET")) _ = gameManager.RouteCommand(gameManager.DealerIdentity, "RESET", []);
+                ImGui.SetNextItemWidth(200f);
+                ImGui.InputText("Winner##bingopay", ref bingoPayTarget, 64);
+                ImGui.SameLine();
+                if (ImGui.Button("PAY") && !string.IsNullOrWhiteSpace(bingoPayTarget))
+                    _ = gameManager.RouteCommand(gameManager.DealerIdentity, "PAY", [bingoPayTarget.Trim()]);
+                ImGui.NewLine();
+            }
+            else
+            {
             var orderedActions = GetOrderedActions(vm.GetActionButtons(), tableService.ActiveGameType);
             if (orderedActions.Count > 0)
             {
@@ -420,6 +447,7 @@ public sealed class DynamicWindowRenderer
                 }
                 ImGui.NewLine();
             }
+            } // end else (non-bingo)
         }
 
         if (ImGui.BeginPopup("ConfirmReopenBets"))
@@ -935,7 +963,7 @@ public sealed class DynamicWindowRenderer
 
     private void DrawActionInputs(GameType game)
     {
-        if (game is GameType.Ultima or GameType.None)
+        if (game is GameType.Ultima or GameType.None or GameType.Bingo)
             return;
 
         ImGui.SetNextItemWidth(120f);
@@ -993,7 +1021,7 @@ public sealed class DynamicWindowRenderer
                 GameType.Baccarat => [wagerInput.ToString(), string.IsNullOrWhiteSpace(target) ? "PLAYER" : target.ToUpperInvariant()],
                 GameType.ChocoboRacing => string.IsNullOrWhiteSpace(target) ? [wagerInput.ToString()] : [wagerInput.ToString(), target],
                 GameType.Ultima => [wagerInput.ToString(), string.IsNullOrWhiteSpace(target) ? "WATER" : target.ToUpperInvariant()],
-                GameType.TexasHoldEm => [wagerInput.ToString()],
+                GameType.TexasHoldEmPvP or GameType.TexasHoldEmPvD => [wagerInput.ToString()],
                 _ => [wagerInput.ToString()]
             };
         }
@@ -1023,6 +1051,7 @@ public sealed class DynamicWindowRenderer
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray() ?? Array.Empty<string>(),
             GameType.Ultima => ["WATER", "FIRE", "GRASS", "LIGHT"],
+            GameType.Bingo => ["OPEN", "DRAW", "PAY", "RESET"],
             _ => Array.Empty<string>()
         };
     }
@@ -1045,9 +1074,11 @@ public sealed class DynamicWindowRenderer
             GameType.Roulette => ["BET", "SPIN"],
             GameType.Craps => ["BET", "ROLL"],
             GameType.Baccarat => ["BET", "DEAL"],
-            GameType.TexasHoldEm => ["BET", "DEAL", "CHECK", "CALL", "RAISE", "FOLD", "ALL"],
+            GameType.TexasHoldEmPvP => ["BET", "DEAL", "CHECK", "CALL", "RAISE", "FOLD", "ALL"],
+            GameType.TexasHoldEmPvD => ["BET", "DEAL", "FOLD"],
             GameType.ChocoboRacing => ["OPENBETS", "BET", "START"],
             GameType.Ultima => ["DEAL", "PLAY"],
+            GameType.Bingo => ["OPEN", "DRAW", "PAY", "RESET"],
             _ => []
         };
 
@@ -1092,7 +1123,7 @@ public sealed class DynamicWindowRenderer
         draw.AddRect(tableMin, tableMax, borderColor, 70f, ImDrawFlags.None, 2.2f);
 
         var boardSeat = vm.Seats.FirstOrDefault(s => s.IsDealer && s.PlayerName.Equals("Board", StringComparison.OrdinalIgnoreCase));
-        if (boardSeat != null && tableService.ActiveGameType == GameType.TexasHoldEm)
+        if (boardSeat != null && tableService.ActiveGameType is GameType.TexasHoldEmPvP or GameType.TexasHoldEmPvD)
         {
             if (!string.IsNullOrWhiteSpace(boardSeat.ResultText))
                 draw.AddText(new Vector2(center.X - 54f, center.Y - 40f), ImGui.GetColorU32(new Vector4(0.95f, 0.95f, 0.8f, 1f)), boardSeat.ResultText);
@@ -1217,6 +1248,9 @@ public sealed class DynamicWindowRenderer
     private string lastChocoboHash = string.Empty;
     private readonly Dictionary<string, float[]> chocoboTrackCache = new(StringComparer.OrdinalIgnoreCase);
 
+    private static List<string> DecodePodium(string hash, List<string> racers)
+        => ChatCasino.Engine.ChocoboRacingModule.BuildPodiumFromHash(hash, racers);
+
     private void DrawChocoboLanes(string hash, List<string> racers, bool racing)
     {
         if (!string.Equals(hash, lastChocoboHash, StringComparison.Ordinal))
@@ -1234,7 +1268,6 @@ public sealed class DynamicWindowRenderer
         var segFloat = frac * 6f;
         var segLow = Math.Clamp((int)MathF.Floor(segFloat), 0, 5);
         var segT = segFloat - segLow;
-        // var easedT = segT * segT * (3f - 2f * segT);
 
         var draw = ImGui.GetWindowDrawList();
         var origin = ImGui.GetCursorScreenPos();
@@ -1243,13 +1276,13 @@ public sealed class DynamicWindowRenderer
         int n = racers.Count;
         float h = n * laneH + 4f;
 
-        var trackBg = ImGui.GetColorU32(new Vector4(0.12f, 0.10f, 0.06f, 0.9f));
-        var laneLine = ImGui.GetColorU32(new Vector4(0.3f, 0.3f, 0.2f, 0.4f));
-        var finishLine = ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 0.3f));
+        uint trackBg = ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.10f, 0.06f, 0.9f));
+        uint laneLine = ImGui.ColorConvertFloat4ToU32(new Vector4(0.3f, 0.3f, 0.2f, 0.4f));
+        uint finishLine = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.3f));
         draw.AddRectFilled(origin, origin + new Vector2(w, h), trackBg, 4f);
         draw.AddLine(origin + new Vector2(w - 2, 0), origin + new Vector2(w - 2, h), finishLine, 2f);
 
-        float labelW = 140f;
+        float labelW = 120f;
         float trackW = w - labelW - 10f;
 
         for (int i = 0; i < n; i++)
@@ -1259,17 +1292,19 @@ public sealed class DynamicWindowRenderer
                 draw.AddLine(new Vector2(origin.X, y), new Vector2(origin.X + w, y), laneLine);
 
             var name = racers[i];
-            if (!checkpoints.TryGetValue(name, out var cp) || cp.Length < 7)
-                continue;
+            if (!checkpoints.TryGetValue(name, out var cp) || cp.Length < 7) continue;
 
             var pos = cp[segLow] + (cp[segLow + 1] - cp[segLow]) * segT;
             float dotX = origin.X + labelW + pos * trackW;
             float dotY = y + laneH * 0.5f;
 
-            var label = name.Length > 18 ? name[..18] : name;
-            draw.AddText(new Vector2(origin.X + 4, y + 2), ImGui.GetColorU32(new Vector4(0.75f, 0.75f, 0.6f, 1f)), label);
-            draw.AddCircleFilled(new Vector2(dotX, dotY), 6f, ImGui.GetColorU32(new Vector4(1f, 0.84f, 0f, 1f)));
-            draw.AddCircle(new Vector2(dotX, dotY), 7.5f, ImGui.GetColorU32(new Vector4(1f, 0.94f, 0.4f, 0.4f)), 12, 1.2f);
+            var label = name.Length > 14 ? name[..14] : name;
+            draw.AddText(new Vector2(origin.X + 4, y + 2),
+                ImGui.ColorConvertFloat4ToU32(new Vector4(0.75f, 0.75f, 0.6f, 1f)), label);
+            uint dotColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.84f, 0f, 1f));
+            uint glowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.94f, 0.4f, 0.4f));
+            draw.AddCircleFilled(new Vector2(dotX, dotY), 6f, dotColor);
+            draw.AddCircle(new Vector2(dotX, dotY), 7.5f, glowColor, 12, 1.2f);
         }
 
         ImGui.Dummy(new Vector2(w, h));
@@ -1277,74 +1312,29 @@ public sealed class DynamicWindowRenderer
 
     private Dictionary<string, float[]> BuildChocoboCheckpointMap(string hash, List<string> racers, List<string> podium)
     {
-        var profiles = ChocoboRacingModule.DecodeRaceProfiles(hash);
-
+        var profiles = ChatCasino.Engine.ChocoboRacingModule.DecodeRaceProfiles(hash);
         foreach (var racer in racers)
         {
-            if (chocoboTrackCache.ContainsKey(racer))
-                continue;
-
+            if (chocoboTrackCache.ContainsKey(racer)) continue;
             var idx = racers.FindIndex(r => r.Equals(racer, StringComparison.OrdinalIgnoreCase));
             var rank = podium.FindIndex(p => p.Equals(racer, StringComparison.OrdinalIgnoreCase));
             var profile = idx >= 0 && idx < profiles.Count
                 ? profiles[idx]
-                : new ChocoboRacingModule.RaceProfile(75, 75, 0, 0);
-            var pace = ChocoboRacingModule.BuildSegmentPace(hash, profile, Math.Max(0, idx));
-
-            chocoboTrackCache[racer] = BuildRacerCheckpoints(hash, racer, rank, pace);
+                : new ChatCasino.Engine.ChocoboRacingModule.RaceProfile(75, 75, 0, 0);
+            var pace = ChatCasino.Engine.ChocoboRacingModule.BuildSegmentPace(hash, profile, Math.Max(0, idx));
+            chocoboTrackCache[racer] = BuildDealerRacerCheckpoints(hash, racer, rank, pace);
         }
-
         return chocoboTrackCache;
     }
 
-    private static float[] BuildRacerCheckpoints(string hash, string racer, int podiumRank, float[] pace)
+    private static float[] BuildDealerRacerCheckpoints(string hash, string racer, int podiumRank, float[] pace)
     {
         var cp = new float[7];
         cp[0] = 0f;
-
         var total = MathF.Max(0.001f, pace.Sum());
         var cumulative = 0f;
-        for (var s = 1; s <= 6; s++)
-        {
-            cumulative += MathF.Max(0.001f, pace[s - 1]);
-            cp[s] = cumulative / total;
-        }
-
-        var seed = StableHash($"{hash}|{racer}");
-        var targetFinish = podiumRank switch
-        {
-            0 => 0.995f,
-            1 => 0.978f,
-            2 => 0.962f,
-            _ => 0.90f + (seed % 7) * 0.008f
-        };
-
-        var scale = targetFinish / MathF.Max(0.001f, cp[6]);
-        var prev = 0f;
-        for (var s = 1; s <= 6; s++)
-        {
-            var next = Math.Clamp(cp[s] * scale, prev + 0.01f, 1f);
-            cp[s] = next;
-            prev = next;
-        }
-
+        for (var s = 1; s <= 6; s++) { cumulative += MathF.Max(0.001f, pace[s - 1]); cp[s] = cumulative / total; }
         return cp;
-    }
-
-    private static int StableHash(string value)
-    {
-        unchecked
-        {
-            var hash = (int)2166136261;
-            foreach (var c in value)
-                hash = (hash ^ c) * 16777619;
-            return hash;
-        }
-    }
-
-    private static List<string> DecodePodium(string hash, List<string> racers)
-    {
-        return ChocoboRacingModule.BuildPodiumFromHash(hash, racers);
     }
 
     private void DrawWorldEditorForSeat(string playerName)
@@ -1397,6 +1387,67 @@ public sealed class DynamicWindowRenderer
             bank = Math.Max(0, bank);
             bankEditByPlayer[playerName] = bank;
             gameManager.TrySetPlayerBank(playerName, bank);
+        }
+    }
+
+    private void DrawBingoVisual(ICasinoViewModel vm, bool dealerView)
+    {
+        if (vm is not BingoViewModel bingo) return;
+
+        // Mode / win condition banner
+        ImGui.TextColored(new Vector4(1f, 0.85f, 0.2f, 1f),
+            bingo.GameMode == BingoGameMode.Progressive
+                ? $"Progressive — Round {bingo.ProgressiveRoundIndex + 1}/{bingo.TotalProgressiveRounds}  |  {BingoModule.WinConditionName(bingo.ActiveWinCondition)}  |  Round pot: {bingo.CurrentRoundPot}\uE049"
+                : $"Standard — {BingoModule.WinConditionName(bingo.ActiveWinCondition)}");
+
+        ImGui.Separator();
+        ImGui.TextColored(new Vector4(1f, 0.9f, 0.3f, 1f), $"Called: {bingo.CurrentTurn}/75");
+        ImGui.Separator();
+
+        // 5 rows (B/I/N/G/O), 15 numbers each
+        var dl = ImGui.GetWindowDrawList();
+        var origin = ImGui.GetCursorScreenPos();
+        const float cellW = 28f;
+        const float cellH = 22f;
+        const float rowGap = 4f;
+        const float labelW = 18f;
+        string[] headers = ["B", "I", "N", "G", "O"];
+        float totalW = labelW + 15 * cellW;
+
+        for (var row = 0; row < 5; row++)
+        {
+            int baseNum = row * 15 + 1;
+            float ry = origin.Y + row * (cellH + rowGap);
+
+            var labelColor = ImGui.GetColorU32(new Vector4(1f, 0.85f, 0.2f, 1f));
+            dl.AddText(new Vector2(origin.X + 2f, ry + 4f), labelColor, headers[row]);
+
+            for (var col = 0; col < 15; col++)
+            {
+                int num = baseNum + col;
+                bool called = bingo.CalledNumbers.Contains(num);
+                var cellPos = new Vector2(origin.X + labelW + col * cellW, ry);
+                var cellMax = new Vector2(cellPos.X + cellW - 1f, cellPos.Y + cellH - 1f);
+                var bg = called
+                    ? ImGui.GetColorU32(new Vector4(0.2f, 0.75f, 0.35f, 1f))
+                    : ImGui.GetColorU32(new Vector4(0.18f, 0.18f, 0.18f, 1f));
+                dl.AddRectFilled(cellPos, cellMax, bg, 2f);
+                dl.AddRect(cellPos, cellMax, ImGui.GetColorU32(new Vector4(0.35f, 0.35f, 0.35f, 1f)), 2f);
+                var textColor = called
+                    ? ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 1f))
+                    : ImGui.GetColorU32(new Vector4(0.5f, 0.5f, 0.5f, 1f));
+                dl.AddText(new Vector2(cellPos.X + (num < 10 ? 9f : 5f), cellPos.Y + 4f), textColor, num.ToString());
+            }
+        }
+        ImGui.Dummy(new Vector2(totalW, 5 * (cellH + rowGap)));
+        ImGui.Separator();
+
+        if (dealerView && bingo.SuspectedBingo.Count > 0)
+        {
+            ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f),
+                $"\u26A0 Possible BINGO: {string.Join(", ", bingo.SuspectedBingo)}");
+            ImGui.TextDisabled("Verify cards then use PAY [name] to pay out.");
+            ImGui.Separator();
         }
     }
 
@@ -1462,7 +1513,7 @@ public sealed class DynamicWindowRenderer
             ImGui.Separator();
         }
 
-        if (activeGame == GameType.TexasHoldEm)
+        if (activeGame is GameType.TexasHoldEmPvP or GameType.TexasHoldEmPvD)
         {
             ImGui.TextUnformatted("Poker");
             ImGui.Checkbox("Auto-play next hand", ref CasinoUI.PokerAutoPlayEnabled);
@@ -1475,6 +1526,76 @@ public sealed class DynamicWindowRenderer
             if (CasinoUI.PokerBigBlind < CasinoUI.PokerSmallBlind)
                 CasinoUI.PokerBigBlind = CasinoUI.PokerSmallBlind;
             ImGui.TextDisabled("Defaults: Buy-in 10,000, SB 50, BB 100 (BB = 1/100 of buy-in)");
+            ImGui.Separator();
+        }
+
+        if (activeGame == GameType.Bingo)
+        {
+            ImGui.TextUnformatted("Bingo");
+            ImGui.SetNextItemWidth(180f);
+            ImGui.InputInt("Card Price (\uE049)", ref CasinoUI.BingoCardPrice, 10, 100);
+            CasinoUI.BingoCardPrice = Math.Max(1, CasinoUI.BingoCardPrice);
+            ImGui.SetNextItemWidth(180f);
+            ImGui.InputInt("Catchup Codes per Game", ref CasinoUI.BingoCatchupLimit, 1, 1);
+            CasinoUI.BingoCatchupLimit = Math.Max(0, CasinoUI.BingoCatchupLimit);
+            ImGui.TextDisabled("How many times each player may request a catchup code.");
+
+            ImGui.Spacing();
+
+            var modeIdx = (int)CasinoUI.BingoGameMode;
+            if (ImGui.Combo("Game Mode##bingomode", ref modeIdx, ["Standard", "Progressive"], 2))
+                CasinoUI.BingoGameMode = (BingoGameMode)modeIdx;
+            ImGui.TextDisabled("Standard: new cards each round. Progressive: cards and daubs carry over.");
+
+            if (CasinoUI.BingoGameMode == BingoGameMode.Standard)
+            {
+                ImGui.Spacing();
+                var wcIdx = (int)CasinoUI.BingoWinCondition;
+                if (ImGui.Combo("Win Condition##bingowc", ref wcIdx,
+                    ["1 Line", "2 Lines", "Four Corners", "Blackout", "Blitz (any 5)"], 5))
+                    CasinoUI.BingoWinCondition = (BingoWinCondition)wcIdx;
+            }
+            else
+            {
+                ImGui.Spacing();
+                ImGui.TextColored(new Vector4(1f, 0.85f, 0.2f, 1f), "Progressive Rounds");
+                ImGui.TextDisabled("Payout % across all rounds must add up to ≤100.");
+
+                var rounds = CasinoUI.BingoProgressiveRounds;
+                int totalPct = rounds.Sum(r => r.PayoutPercent);
+                var pctColor = totalPct > 100
+                    ? new Vector4(1f, 0.3f, 0.3f, 1f)
+                    : new Vector4(0.5f, 1f, 0.5f, 1f);
+                ImGui.TextColored(pctColor, $"Total payout: {totalPct}%{(totalPct > 100 ? "  ⚠ exceeds 100%!" : string.Empty)}");
+
+                int removeIdx = -1;
+                for (var ri = 0; ri < rounds.Count; ri++)
+                {
+                    var r = rounds[ri];
+                    ImGui.PushID(ri);
+                    ImGui.SetNextItemWidth(130f);
+                    var wcI = (int)r.WinCondition;
+                    if (ImGui.Combo("##wc", ref wcI,
+                        ["1 Line", "2 Lines", "Four Corners", "Blackout", "Blitz"], 5))
+                        r.WinCondition = (BingoWinCondition)wcI;
+                    ImGui.SameLine();
+                    ImGui.SetNextItemWidth(70f);
+                    var pct = r.PayoutPercent;
+                    if (ImGui.InputInt("##pct", ref pct, 5, 10))
+                        r.PayoutPercent = Math.Clamp(pct, 0, 100);
+                    ImGui.SameLine();
+                    ImGui.TextUnformatted("%");
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton($"X##del{ri}"))
+                        removeIdx = ri;
+                    ImGui.PopID();
+                }
+                if (removeIdx >= 0 && rounds.Count > 1)
+                    rounds.RemoveAt(removeIdx);
+                if (ImGui.SmallButton("+ Add Round"))
+                    rounds.Add(new BingoProgressiveRound { WinCondition = BingoWinCondition.OneLine, PayoutPercent = 0 });
+            }
+
             ImGui.Separator();
         }
 

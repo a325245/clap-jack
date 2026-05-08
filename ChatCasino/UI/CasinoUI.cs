@@ -50,6 +50,7 @@ public static class CasinoUI
     public static float CrapsRollDelaySeconds = 1.2f;
     public static bool BaccaratCommissionEnabled = false;
     public static bool PokerAutoPlayEnabled = true;
+    public static bool PrivateBanks = false;
     public static int PokerSmallBlind = 50;
     public static int PokerBigBlind = 100;
     public static int BlackjackNaturalPayoutNumerator = 3;
@@ -58,7 +59,24 @@ public static class CasinoUI
     public static int DealerChatDelayMinMs = 500;
     public static int DealerChatDelayMaxMs = 1000;
     public static bool NaturalChatOutput = true;
+    public static bool ErrorMessagesToEcho = true;
     public static int PlayerChatChannelIndex = 1; // 0 = /say, 1 = /party
+
+    public static bool BlackjackDiceMode = false;
+    public static bool BaccaratDiceMode = false;
+
+    // Bingo settings
+    public static int BingoCardPrice = 100;
+    public static int BingoCatchupLimit = 1;
+    public static BingoWinCondition BingoWinCondition = BingoWinCondition.OneLine;
+    public static BingoGameMode BingoGameMode = BingoGameMode.Standard;
+    // Progressive: list of rounds with win condition + payout %
+    public static List<BingoProgressiveRound> BingoProgressiveRounds = new()
+    {
+        new() { WinCondition = BingoWinCondition.OneLine, PayoutPercent = 30 },
+        new() { WinCondition = BingoWinCondition.TwoLine, PayoutPercent = 30 },
+        new() { WinCondition = BingoWinCondition.Blackout, PayoutPercent = 40 }
+    };
 
     public static void DrawCardStack(Vector2 pos, IEnumerable<Card> cards)
     {
@@ -241,3 +259,5 @@ public static class CasinoUI
 
     private static readonly HashSet<int> RouletteRedNumbers = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
 }
+
+

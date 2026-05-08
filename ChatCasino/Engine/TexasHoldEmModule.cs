@@ -40,7 +40,7 @@ public sealed class TexasHoldEmModule : BaseEngine
         ITimerService timer,
         PokerEvaluator evaluator,
         PotManager potManager)
-        : base(GameType.TexasHoldEm, msg, decks, players)
+        : base(GameType.TexasHoldEmPvP, msg, decks, players)
     {
         this.bank = bank;
         this.timer = timer;
@@ -174,7 +174,7 @@ public sealed class TexasHoldEmModule : BaseEngine
 
         return new PokerViewModel
         {
-            GameTitle = "Texas Hold'Em",
+            GameTitle = "Texas Hold'Em PvP",
             GameStatus = StatusText,
             Seats = seats,
             Actions = GetValidCommands().ToList()

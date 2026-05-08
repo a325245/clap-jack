@@ -5,6 +5,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Chat;
 using SamplePlugin.Windows;
 using SamplePlugin.Engine;
 using SamplePlugin.Commands;
@@ -27,6 +28,7 @@ namespace SamplePlugin
         [PluginService] internal static IPluginLog Log { get; private set; } = null!;
         [PluginService] internal static IPartyList PartyList { get; private set; } = null!;
         [PluginService] internal static IClientState ClientState { get; private set; } = null!;
+        [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
 
         public IDalamudPluginInterface PluginInterface { get; init; }
         private ICommandManager CommandManager { get; init; }
@@ -138,10 +140,11 @@ namespace SamplePlugin
             MessageTimer.Start();
         }
 
-        private void ChatGui_ChatMessage(XivChatType type, int timestamp, ref SeString sender, ref SeString message, ref bool isHandled)
+        private void ChatGui_ChatMessage(IHandleableChatMessage chatMessage)
         {
-            var text = message.TextValue.Trim();
-            var rawSender = sender.TextValue;
+            var type = chatMessage.LogKind;
+            var text = chatMessage.Message.TextValue.Trim();
+            var rawSender = chatMessage.Sender.TextValue;
 
             // Strip any leading special/icon characters from the sender name
             // Party chat prefixes names with job icons (e.g. "🎴Jess Dee" → "Jess Dee")
@@ -172,7 +175,7 @@ namespace SamplePlugin
             {
                 var t = Engine.CurrentTable;
                 var s = ChatParser.State;
-                string myName = ClientState?.LocalPlayer?.Name.TextValue ?? string.Empty;
+                string myName = PlayerState?.CharacterName ?? string.Empty;
                 if (!string.IsNullOrEmpty(myName) && t.UltimaHands.TryGetValue(myName, out var myHand))
                     s.UltimaHand = new List<Models.UltimaCard>(myHand);
                 s.UltimaTopCard     = t.UltimaTopCard;
@@ -252,10 +255,10 @@ namespace SamplePlugin
             Engine.CurrentTable.AnnounceNewPlayers = false;
 
             // Add the local player first
-            string? localName = ClientState?.LocalPlayer?.Name.TextValue;
+            string? localName = PlayerState?.CharacterName;
             if (!string.IsNullOrEmpty(localName))
             {
-                string? localWorld = ClientState?.LocalPlayer?.HomeWorld.Value.Name.ExtractText();
+                string? localWorld = PlayerState?.HomeWorld.Value.Name.ExtractText();
                 Engine.AddPlayer(string.IsNullOrEmpty(localWorld) ? localName : $"{localName}@{localWorld}");
             }
 
@@ -498,3 +501,4 @@ namespace SamplePlugin
         }
     }
 }
+

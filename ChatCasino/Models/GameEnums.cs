@@ -8,8 +8,10 @@ public enum GameType
     Craps,
     Baccarat,
     ChocoboRacing,
-    TexasHoldEm,
-    Ultima
+    TexasHoldEmPvP,
+    TexasHoldEmPvD,
+    Ultima,
+    Bingo
 }
 
 public enum GameState
@@ -30,6 +32,15 @@ public enum TransactionResult
     PlayerNotFound,
     ConcurrencyConflict,
     UnknownFailure
+}
+
+public enum BingoWinCondition { OneLine, TwoLine, FourCorners, Blackout, Blitz }
+public enum BingoGameMode { Standard, Progressive }
+
+public sealed class BingoProgressiveRound
+{
+    public BingoWinCondition WinCondition { get; set; } = BingoWinCondition.OneLine;
+    public int PayoutPercent { get; set; } = 100;
 }
 
 public readonly record struct CmdResult(bool Success, string Message)

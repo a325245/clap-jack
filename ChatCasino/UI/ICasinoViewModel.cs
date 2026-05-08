@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ChatCasino.Models;
 
 namespace ChatCasino.UI;
 
@@ -24,4 +25,20 @@ public interface ICasinoViewModel
     string GameStatus { get; }
     List<PlayerSlotViewModel> Seats { get; }
     IReadOnlyList<string> GetActionButtons();
+}
+
+public sealed class BingoViewModel : BaseViewModel
+{
+    public List<int> CalledNumbers { get; set; } = new();
+    public HashSet<string> SuspectedBingo { get; set; } = new(System.StringComparer.OrdinalIgnoreCase);
+    public int CurrentTurn { get; set; }
+    public string RoomName { get; set; } = string.Empty;
+    public string CurrentCatchupCode { get; set; } = string.Empty;
+    public bool IsGameOpen { get; set; }
+    public bool IsGameActive { get; set; }
+    public BingoWinCondition ActiveWinCondition { get; set; }
+    public BingoGameMode GameMode { get; set; }
+    public int ProgressiveRoundIndex { get; set; }  // 0-based
+    public int TotalProgressiveRounds { get; set; }
+    public int CurrentRoundPot { get; set; }
 }
